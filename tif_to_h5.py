@@ -20,8 +20,8 @@ def extract_patches(image_path, patch_size=(24, 24), stride=24):
 
 
 def build_dataset(tif_dir, output_path, patch_size=(24, 24), stride=24):
-    # Get all tif files sorted by date 
-    tif_files = sorted([os.path.join(tif_dir, f) for f in os.listdir(tif_dir) if f.endswith('.tif')]). 
+    # Get all tif files sorted by date
+    tif_files = sorted([os.path.join(tif_dir, f) for f in os.listdir(tif_dir) if f.endswith('.tif')])
     assert len(tif_files) > 0, "No .tif files found in directory."
 
     print(f"Found {len(tif_files)} .tif files. Extracting patches...")

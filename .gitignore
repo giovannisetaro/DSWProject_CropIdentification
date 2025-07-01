@@ -23,3 +23,5 @@ Thumbs.db
 data
 data/
 /data/
+.h5
+*.h5
