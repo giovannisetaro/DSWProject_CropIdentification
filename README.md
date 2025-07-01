@@ -4,9 +4,6 @@ Crop mapping from image time series: deep learning
 
 
 
-
-
-
 ## biblio 
 
 Turkoglu, M. O., D'Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K., & Wegner, J. D. (2021).  
