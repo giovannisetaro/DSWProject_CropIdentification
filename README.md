@@ -7,11 +7,10 @@ Crop mapping from image time series: deep learning
 
 
 
-@article{turkoglu2021msconvstar,
-  title={Crop mapping from image time series: deep learning with multi-scale label hierarchies},
-  author={Turkoglu, Mehmet Ozgur and D'Aronco, Stefano and Perich, Gregor and Liebisch, Frank and Streit, Constantin and Schindler, Konrad and Wegner, Jan Dirk},
-  journal={Remote Sensing of Environment},
-  volume={264},
-  year={2021},
-  publisher={Elsevier}
-}
+## biblio 
+
+Turkoglu, M. O., D'Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K., & Wegner, J. D. (2021).  
+*Crop mapping from image time series: deep learning with multi-scale label hierarchies*.  
+Remote Sensing of Environment, 264. Elsevier.  
+
+[https://doi.org/10.1016/j.rse.2021.112623](https://doi.org/10.1016/j.rse.2021.112623)
