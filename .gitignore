@@ -18,3 +18,8 @@ __pycache__/
 # System files
 Thumbs.db
 .DS_Store
+
+# data
+data
+data/
+/data/
