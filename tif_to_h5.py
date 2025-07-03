@@ -66,11 +66,19 @@ def build_dataset(tif_dir, output_path, patch_size=(24, 24), stride=24):
     stacked_patches = []
     n_patches = len(list_of_patch_sets[0])
     for patch_idx in range(n_patches):
+        # Extraire la série temporelle des patches pour ce patch_idx
         time_series = [list_of_patch_sets[t][patch_idx] for t in range(len(list_of_patch_sets))]
-        stacked = np.stack(time_series, axis=0)  # shape: (T, C, H, W)
+        # Empiler dans un tableau numpy (T, C, H, W)
+        stacked = np.stack(time_series, axis=0)
         stacked_patches.append(stacked)
 
+    # Convertir la liste en ndarray shape: (N_patches, T, C, H, W)
+    stacked_patches = np.stack(stacked_patches)
+
+    # Créer un masque booléen indiquant les patches avec au moins un pixel non nul
     non_empty_mask = np.any(stacked_patches != 0, axis=(1, 2, 3, 4))
+
+    # Filtrer les patches conservés
     filtered_patches = stacked_patches[non_empty_mask]
 
     print(f"Saving patch conserved : n= {filtered_patches.shape[0]} patches not null over {stacked_patches.shape[0]} in total)")
@@ -83,7 +91,7 @@ def build_dataset(tif_dir, output_path, patch_size=(24, 24), stride=24):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert .tif time series to .h5 dataset for CNN training.")
     parser.add_argument('--tif_dir', type=str, default= "data/Tif", help="Directory with .tif files (ordered by date)")
-    parser.add_argument('--output', type=str, default= "Dataset.h5", help="Output path to .h5 file")
+    parser.add_argument('--output', type=str, default= "data/Dataset.h5", help="Output path to .h5 file")
     parser.add_argument('--patch_size', type=int, default=24, help="Patch size (assumes square)")
     parser.add_argument('--stride', type=int, default=24, help="Stride between patches") # default=24=patch_size for Non-overlapping patches
 
