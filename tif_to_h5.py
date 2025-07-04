@@ -129,7 +129,7 @@ def build_dataset(tif_dir, label_path, output_path, patch_size=(24, 24), stride=
 #    ├── data     [N, T, C, H, W]
 #    ├── labels   [N, H, W]
 #    ├── coords   [N, 2]
-#    └── dates
+#    └── dates    [T]
 
 # with : for one i = 
 # x = hf["dataset/data"][i]       # [T, C, H, W]
