@@ -146,7 +146,7 @@ if __name__ == "__main__":
     parser.add_argument('--tif_dir', type=str, default= "data/Tif", help="Directory with .tif files (ordered by date)")
     parser.add_argument('--output', type=str, default= "data/Dataset.h5", help="Output path to .h5 file")
     parser.add_argument('--patch_size', type=int, default=24, help="Patch size (assumes square)")
-    parser.add_argument('--stride', type=int, default=24, help="Stride between patches") # default=24=patch_size for Non-overlapping patches
+    parser.add_argument('--stride', type=int, default=24, help="Stride between patches") # default padding=24=patch_size for Non-overlapping patches
 
     args = parser.parse_args()
 
