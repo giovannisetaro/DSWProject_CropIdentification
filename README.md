@@ -33,3 +33,5 @@ vers [B, D, H, W] — embedding image.
 
 Classification par pixel.
 
+
+# DSWProject_CropIdentification

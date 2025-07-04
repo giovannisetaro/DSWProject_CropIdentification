@@ -1,0 +1,11 @@
+geopandas
+shapely
+rasterio
+earthengine-api
+geemap
+matplotlib
+h5py
+torch
+numpy
+tqdm
+argparse
