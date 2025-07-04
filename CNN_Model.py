@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class TemporalPixelCNN(nn.Module):
+class TemporalPixelCNNV1(nn.Module):
     def __init__(self, in_channels=4, out_channels=64, kernel_size=3):
         #in_channels : number of bands
         # out_channels : number of filter (hyper parametre)
@@ -27,24 +27,88 @@ class TemporalPixelCNN(nn.Module):
         x = self.bn(x)
         x = self.relu(x)
 
-        # Option 1: réduire la dimension temporelle par moyenne globale
-        x = x.mean(dim=2)                          # [B*H*W, D]
+        # Option 1: robust to noise but lost of peaks / rapid variations (harvest/ blooming)
+
+       # x = x.mean(dim=2)    # [B*H*W, D]
+        #Option 2 – Max temporel : sensitive to peaks / rapid variations but ignore the global dynamic 
+        x = x.max(dim=2).values  # [B*H*W, D]
+
+        #option 3 : attention module but .... no time
 
         # Reformer en tenseur image embedding
         D = x.size(1)
         x = x.view(B, H, W, D).permute(0, 3, 1, 2) # [B, D, H, W]
         return x
     
+############## ADDING +1 conv layer to have a bigger receptive temporal field in the embedding ! 
+
+class TemporalPixelCNN(nn.Module):
+    def __init__(self, in_channels=4, out_channels=64, kernel_size=3):
+        super().__init__()
+        # First 1D convolution over the temporal dimension
+        # Kernel size defines how many months are looked at simultaneously
+        # Padding is set to keep the temporal dimension unchanged (same length output)
+        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, padding=kernel_size//2)
+        self.bn1 = nn.BatchNorm1d(out_channels)  # BatchNorm to stabilize training
+        self.relu = nn.ReLU()
+
+        # Second 1D convolution to increase temporal receptive field
+        # By stacking two conv layers, the model captures longer temporal patterns (e.g. >3 months)
+        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, padding=kernel_size//2)
+        self.bn2 = nn.BatchNorm1d(out_channels)
+
+    def forward(self, x):
+        # x shape: [B, C=4, T=12, H=24, W=24]
+        B, C, T, H, W = x.shape
+
+        # Permute to bring spatial dims upfront, so that we can treat each pixel independently
+        # New shape: [B, H, W, C, T]
+        x = x.permute(0, 3, 4, 1, 2).contiguous()
+
+        # Flatten batch and spatial dims to process each pixel time series independently
+        # Shape: [B*H*W, C, T]
+        x = x.view(B*H*W, C, T)
+
+        # First temporal convolution
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        # Second temporal convolution expands the temporal receptive field
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+
+        # Temporal pooling (max) reduces temporal dimension, keeps strongest temporal features
+        # Result shape: [B*H*W, out_channels]
+        x = x.max(dim=2).values
+
+        # Reshape back to image embedding form for spatial CNN input
+        # Shape: [B, out_channels, H, W]
+        D = x.size(1)
+        x = x.view(B, H, W, D).permute(0, 3, 1, 2)
+
+        return x
+
+
+
+
+
+
+
+
 
 class DoubleConv(nn.Module):
     def __init__(self, in_ch, out_ch):
+        #in_ch : nombre de canaux d’entrée / nbr of features ie dimension of the multispectral + temporal embedding
+        # out_ch : number of output channels 
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1), #kernel depth = nbr of feature = D = initiali : number of filters in the temporal CNN 
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True), # negativ values set to 0 for optimisation
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1), ## Receptiv field of 5*5 pixel <=> 50m*50m
+            nn.BatchNorm2d(out_ch), 
             nn.ReLU(inplace=True),
         )
     def forward(self, x):

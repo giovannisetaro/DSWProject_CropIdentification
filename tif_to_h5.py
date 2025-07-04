@@ -5,6 +5,7 @@ import h5py
 import rasterio
 from rasterio.windows import Window
 from tqdm import tqdm
+import re
 
 
 
@@ -31,61 +32,113 @@ def mask_no_labeled_pixel(tif_dir):
             dst.write(data)
 
 
-def extract_patches(image_path, patch_size=(24, 24), stride=24):
+
+
+def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
     patches = []
+    coords = []
     with rasterio.open(image_path) as src:
+        transform = src.transform
         width, height = src.width, src.height
-        for i in range(0, width - patch_size[0] + 1, stride):
-            for j in range(0, height - patch_size[1] + 1, stride):
-                window = Window(i, j, *patch_size)
+
+        for i in range(0, height - patch_size[0] + 1, stride):
+            for j in range(0, width - patch_size[1] + 1, stride):
+                window = Window(j, i, patch_size[1], patch_size[0])  # Note l'ordre: col, row, width, height
                 patch = src.read(window=window)  # shape: (bands, H, W)
                 patches.append(patch)
-    return patches
+
+                # Convertir pixel (i,j) en coordonnées géospatiales (x,y)
+                x, y = rasterio.transform.xy(transform, i, j)
+                coords.append((x, y))
+
+    return patches, coords
+
+
+def extract_date_from_filename(filename):
+    match = re.search(r'(\d{8})', filename)
+    if match:
+        return match.group(1)  # YYYYMMDD
+    return "Unknown"
 
 
 
 
 
-def build_dataset(tif_dir, output_path, patch_size=(24, 24), stride=24):
 
-    mask_no_labeled_pixel(tif_dir)
-
-    # Get all tif files sorted by date
-
-    tif_files = sorted([os.path.join('data/Tif', f) for f in os.listdir('data/Tif') if f.endswith('.tif')])
-    assert len(tif_files) > 0, "No .tif files found in directory."
+def build_dataset(tif_dir, label_path, output_path, patch_size=(24, 24), stride=24):
+    tif_files = sorted([os.path.join(tif_dir, f) for f in os.listdir(tif_dir) if f.endswith('.tif')])
+    assert len(tif_files) > 0, "No .tif files found."
 
     print(f"Found {len(tif_files)} .tif files. Extracting patches...")
 
     list_of_patch_sets = []
+    list_of_dates = []
+    all_coords = None
+
     for tif in tqdm(tif_files, desc="Extracting from .tif files"):
-        patches = extract_patches(tif, patch_size, stride)
+        patches, coords = extract_patches_with_coords(tif, patch_size, stride)
+        date = extract_date_from_filename(os.path.basename(tif)) 
         list_of_patch_sets.append(patches)
+        list_of_dates.append(date)
+        if all_coords is None:
+            all_coords = coords  # Same for all timestamps
 
-    # Stack patches per spatial location: shape (T, C, H, W)
+    # Stack patches along time for each spatial location
     stacked_patches = []
-    n_patches = len(list_of_patch_sets[0])
-    for patch_idx in range(n_patches):
-        # Extraire la série temporelle des patches pour ce patch_idx
-        time_series = [list_of_patch_sets[t][patch_idx] for t in range(len(list_of_patch_sets))]
-        # Empiler dans un tableau numpy (T, C, H, W)
-        stacked = np.stack(time_series, axis=0)
+    for idx in range(len(all_coords)):
+        time_series = [list_of_patch_sets[t][idx] for t in range(len(tif_files))]  # [T, C, H, W]
+        stacked = np.stack(time_series, axis=0)  # [T, C, H, W]
         stacked_patches.append(stacked)
+    stacked_patches = np.stack(stacked_patches)  # [N, T, C, H, W]
 
-    # Convertir la liste en ndarray shape: (N_patches, T, C, H, W)
-    stacked_patches = np.stack(stacked_patches)
+    # Process label image (assuming it aligns spatially)
+    label_dataset = rasterio.open(label_path)
+    label_img = label_dataset.read(1)  # [H, W]
 
-    # Créer un masque booléen indiquant les patches avec au moins un pixel non nul
+    label_patches = []
+    for (x, y) in all_coords:
+        row, col = rasterio.transform.rowcol(label_dataset.transform, x, y)
+        patch = label_img[row:row+patch_size[0], col:col+patch_size[1]]
+        label_patches.append(patch)
+
+    label_patches = np.stack(label_patches)
+    label_dataset.close()
+
+
+    # mask empty patches
     non_empty_mask = np.any(stacked_patches != 0, axis=(1, 2, 3, 4))
-
-    # Filtrer les patches conservés
     filtered_patches = stacked_patches[non_empty_mask]
+    filtered_labels = label_patches[non_empty_mask]
+    filtered_coords = np.array(all_coords)[non_empty_mask]
 
-    print(f"Saving patch conserved : n= {filtered_patches.shape[0]} patches not null over {stacked_patches.shape[0]} in total)")
+
+    # Convertir la liste de dates en tableau numpy dtype string
+    dt = h5py.string_dtype(encoding='utf-8')
+    dates_array = np.array(list_of_dates, dtype=dt)
+    # Save to .h5
 
     with h5py.File(output_path, 'w') as hf:
-        hf.create_dataset("data", data=stacked_patches, compression="gzip")
-    print("Done ✅")
+        group = hf.create_group("dataset")
+        group.create_dataset("data", data=filtered_patches, compression="gzip")      # [N, T, C, H, W]
+        group.create_dataset("gt_labels", data=filtered_labels, compression="gzip")     # [N, H, W]
+        group.create_dataset("coords", data=filtered_coords, compression="gzip")     # [N, 2] → (x, y)
+        group.create_dataset("dates", data=dates_array)                    # [T]
+
+#dataset.h5
+#└── dataset/
+#    ├── data     [N, T, C, H, W]
+#    ├── labels   [N, H, W]
+#    ├── coords   [N, 2]
+#    └── dates
+
+# with : for one i = 
+# x = hf["dataset/data"][i]       # [T, C, H, W]
+# y = hf["dataset/labels"][i]     # [H, W]
+# xy = hf["dataset/coords"][i]    # coord (x,y) 
+
+    print(f"✅ Saved {filtered_patches.shape[0]} patches to {output_path}")
+
+
 
 
 if __name__ == "__main__":
