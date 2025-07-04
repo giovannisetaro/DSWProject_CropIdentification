@@ -7,6 +7,7 @@ from shapely.geometry import shape
 import ee 
 import os
 import math
+from tqdm import tqdm
 
 def create_gee_geometries(coords_list, side_km=10):
     """
@@ -92,13 +93,6 @@ def generate_date_ranges(start_date, end_date, interval_days=15):
     return date_list
 
 
-
-
-
-
-
-
-
 def mask_scl(img):
     scl = img.select('SCL')
     # Mask all pixels that are NOT in classes 4 to 7
@@ -110,6 +104,7 @@ def mask_scl(img):
 
 def get_median_image(start, end, Geometry_data_collect):
     # Load the useful bands + SCL
+    bands = ['B2', 'B3', 'B4', 'B8']
     collection = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED") \
         .filterBounds(Geometry_data_collect) \
         .filterDate(start, end) \
@@ -126,9 +121,24 @@ def get_median_image(start, end, Geometry_data_collect):
 
     size = collection.size()
     median = ee.Algorithms.If(size.gt(0), compute_median(), None)
+
+    
+    n_images = median.size().getInfo()
+    median_list = median.toList(s2.size())
+
+    total_n_img = 0
+    print(f"median images for date {start} retrieved ! infos : ")
+    for i in range(n_images):
+        img = ee.Image(median_list.get(i))
+        props = img.toDictionary().getInfo()
+        num_agg = props['Number_of_aggreted_images']
+        total_n_img += num_agg
+        print(f"Image {i} composed by {num_agg} images " )
+
+    print(total_n_img)
+
     return median
-
-
+    
 def export_tiff(image_collection,Geometry_data_collect,export_folder,export_maxPixels ): 
     # pixel overlap
 
@@ -227,3 +237,54 @@ def rasterize_labels_per_zone(
             dst.write(label_raster, 1)
 
         print(f"✅ ground trouth label saved : {label_path}")
+
+
+
+def mask_no_labeled_pixel_all_zones(base_dir, label_filename="labels_raster.tif", delete_original=True):
+    """
+    Iterates over all subfolders in `base_dir`, reads the label raster file in each zone,
+    then masks all pixels with label value 0 on every TIFF file within that zone.
+
+    Args:
+        base_dir (str): Path to the main directory containing zone subfolders.
+        label_filename (str): Name of the label raster file within each zone folder.
+        delete_original (bool): If True, deletes the original TIFF files after masking.
+
+    Returns:
+        None
+    """
+    for zone_name in os.listdir(base_dir):
+        zone_path = os.path.join(base_dir, zone_name)
+        if not os.path.isdir(zone_path):
+            continue
+        
+        label_path = os.path.join(zone_path, label_filename)
+        if not os.path.exists(label_path):
+            print(f"⚠️ Label raster not found in {zone_path}, skipping.")
+            continue
+        
+        print(f"🔄 Masking TIFFs in zone: {zone_name}")
+        
+        with rasterio.open(label_path) as src:
+            img_reference = src.read(1)
+        
+        tif_files = sorted([os.path.join(zone_path, f) for f in os.listdir(zone_path) if f.endswith('.tif')])
+        
+        for tif_path in tqdm(tif_files, desc=f"Masking TIFFs in {zone_name}"):
+            with rasterio.open(tif_path) as src:
+                data = src.read()
+                profile = src.profile
+                
+                mask = (img_reference == 0)
+                data[:, mask] = 0
+            
+            base_name = os.path.basename(tif_path).replace('.tif', '_masked.tif')
+            output_path = os.path.join(zone_path, base_name)
+            
+            with rasterio.open(output_path, 'w', **profile) as dst:
+                dst.write(data)
+            
+            if delete_original:
+                os.remove(tif_path)
+        
+        print(f"✅ Masking done for zone {zone_name}")
