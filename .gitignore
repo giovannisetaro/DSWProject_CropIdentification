@@ -1,32 +1,35 @@
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
-*.ipynb_checkpoints
+*.pyc
+*.pyo
+
+# --- Environnements virtuels ---
 .env
 .venv/
+venv/
 *.env
-*.DS_Store
 
-# Jupyter Notebook
+# --- Jupyter ---
 .ipynb_checkpoints/
 
-# Logs and outputs
+# --- Fichiers système ---
+.DS_Store
+Thumbs.db
+
+# --- Logs et fichiers temporaires ---
 *.log
 *.out
 *.bak
 
-# System files
-Thumbs.db
-.DS_Store
-
-# data
-data
-data/
+# --- Données (à adapter selon tes besoins) ---
 /data/
-.h5
-*.h5
+data/
 *.tif
+*.h5
+*.gpkg  # si tu veux aussi ignorer les fichiers geopackage (optionnel)
 
-venv/
-__pycache__/
-*.pyc
+# --- Sorties de modèle ou de cluster ---
+/outputs/
+*.ckpt
+*.pth
