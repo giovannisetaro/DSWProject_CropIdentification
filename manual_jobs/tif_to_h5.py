@@ -6,6 +6,9 @@ import rasterio
 from rasterio.windows import Window
 from tqdm import tqdm
 import re
+import pandas as pd 
+import warnings
+
 
 
 
@@ -32,76 +35,102 @@ def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
 
 
 def extract_date_from_filename(filename):
-    match = re.search(r'(\d{8})', filename)  # Cherche une date au format "YYYYMMDD"
+    match = re.search(r'(\d{8})', filename)
     if match:
-        date_str = match.group(1)
-        return pd.to_datetime(date_str, format="%Y%m%d")
-    return None  # ou "Unknown" si tu préfères
+        return match.group(1)  # chaîne 'YYYYMMDD'
+    return None
 
 
 
 
+def process_zone(zone_dir, patch_size=(24, 24), stride=24):
+    # Récupérer tous les .tif dans la zone (excepté labels)
+    tif_files = sorted([os.path.join(zone_dir, f) for f in os.listdir(zone_dir)
+                        if f.endswith('.tif') and 'labels' not in f])
+    if len(tif_files) == 0:
+        warnings.warn(f"No .tif files found in {zone_dir}. Skipping this zone.")
+        return None, None, None, None
 
-
-def build_dataset(tif_dir, label_path, output_path, patch_size=(24, 24), stride=24):
-    tif_files = sorted([os.path.join(tif_dir, f) for f in os.listdir(tif_dir) if f.endswith('.tif')])
-    assert len(tif_files) > 0, "No .tif files found."
-
-    print(f"Found {len(tif_files)} .tif files. Extracting patches...")
+    print(f"Processing zone {zone_dir}, found {len(tif_files)} images")
 
     list_of_patch_sets = []
     list_of_dates = []
     all_coords = None
 
-    for tif in tqdm(tif_files, desc="Extracting from .tif files"):
+    for tif in tqdm(tif_files, desc=f"Extracting patches in {os.path.basename(zone_dir)}"):
         patches, coords = extract_patches_with_coords(tif, patch_size, stride)
-        date = extract_date_from_filename(os.path.basename(tif)) 
+        date = extract_date_from_filename(os.path.basename(tif))
         list_of_patch_sets.append(patches)
         list_of_dates.append(date)
         if all_coords is None:
-            all_coords = coords  # Same for all timestamps
+            all_coords = coords
 
-    # Stack patches along time for each spatial location
+    # Empiler le temps pour chaque patch spatial
     stacked_patches = []
     for idx in range(len(all_coords)):
-        time_series = [list_of_patch_sets[t][idx] for t in range(len(tif_files))]  # [T, C, H, W]
-        stacked = np.stack(time_series, axis=0)  # [T, C, H, W]
+        time_series = [list_of_patch_sets[t][idx] for t in range(len(tif_files))]
+        stacked = np.stack(time_series, axis=0)  # (T, C, H, W)
         stacked_patches.append(stacked)
-    stacked_patches = np.stack(stacked_patches)  # [N, T, C, H, W]
+    stacked_patches = np.stack(stacked_patches)  # (N, T, C, H, W)
 
-    # Process label image (assuming it aligns spatially)
-    label_dataset = rasterio.open(label_path)
-    label_img = label_dataset.read(1)  # [H, W]
+    # Traiter le raster des labels
+    label_path = os.path.join(zone_dir, 'labels_raster_masked.tif')
+    with rasterio.open(label_path) as label_dataset:
+        label_img = label_dataset.read(1)
+        label_patches = []
+        for (x, y) in all_coords:
+            row, col = rasterio.transform.rowcol(label_dataset.transform, x, y)
+            patch = label_img[row:row+patch_size[0], col:col+patch_size[1]]
+            label_patches.append(patch)
+        label_patches = np.stack(label_patches)
 
-    label_patches = []
-    for (x, y) in all_coords:
-        row, col = rasterio.transform.rowcol(label_dataset.transform, x, y)
-        patch = label_img[row:row+patch_size[0], col:col+patch_size[1]]
-        label_patches.append(patch)
-
-    label_patches = np.stack(label_patches)
-    label_dataset.close()
-
-
-    # mask empty patches
+    # Masquer les patches vides
     non_empty_mask = np.any(stacked_patches != 0, axis=(1, 2, 3, 4))
     filtered_patches = stacked_patches[non_empty_mask]
     filtered_labels = label_patches[non_empty_mask]
     filtered_coords = np.array(all_coords)[non_empty_mask]
 
-
-    # Converting the list of pd.datetimes into an array to store it in the .h5
+    # Dates en np.datetime64 (même pour tous les patches)
     dates_array = np.array(list_of_dates, dtype='datetime64[ns]')
-    group.create_dataset("dates", data=dates_array)
-    # Save to .h5
 
+
+    return filtered_patches, filtered_labels, filtered_coords, dates_array
+
+def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=24):
+    zones = [os.path.join(data_dir, d) for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
+    print(f"Found zones: {[os.path.basename(z) for z in zones]}")
+
+    all_data = []
+    all_labels = []
+    all_coords = []
+    dates_ref = None
+
+    for zone_dir in zones:
+        data, labels, coords, dates = process_zone(zone_dir, patch_size, stride)
+
+        if dates_ref is None:
+            dates_ref = dates  # récupérer la référence une fois
+
+        all_data.append(data)
+        all_labels.append(labels)
+        all_coords.append(coords)
+
+    dates_str = [str(d) for d in dates_ref if d is not None]
+
+    # Concaténer tous les patchs des zones
+    all_data = np.concatenate(all_data, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+    all_coords = np.concatenate(all_coords, axis=0)
+
+    # Sauvegarder dans un fichier h5 plat
     with h5py.File(output_path, 'w') as hf:
-        group = hf.create_group("dataset")
-        group.create_dataset("data", data=filtered_patches, compression="gzip")      # [N, T, C, H, W]
-        group.create_dataset("gt_labels", data=filtered_labels, compression="gzip")     # [N, H, W]
-        group.create_dataset("coords", data=filtered_coords, compression="gzip")     # [N, 2] → (x, y)
-        group.create_dataset("dates", data=dates_array)                    # [T]
+        hf.create_dataset("data", data=all_data, compression="gzip")
+        hf.create_dataset("labels", data=all_labels, compression="gzip")
+        hf.create_dataset("coords", data=all_coords, compression="gzip")
+        dt = h5py.string_dtype(encoding='utf-8')
+        hf.create_dataset("dates", data=np.array(dates_str, dtype=dt))
 
+    print(f"✅ Saved flat dataset with {all_data.shape[0]} patches to {output_path}")
 #dataset.h5
 #└── dataset/
 #    ├── data     [N, T, C, H, W]
@@ -114,22 +143,24 @@ def build_dataset(tif_dir, label_path, output_path, patch_size=(24, 24), stride=
 # y = hf["dataset/labels"][i]     # [H, W]
 # xy = hf["dataset/coords"][i]    # coord (x,y) 
 
-    print(f"✅ Saved {filtered_patches.shape[0]} patches to {output_path}")
+
 
 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert .tif time series to .h5 dataset for CNN training.")
-    parser.add_argument('--tif_dir', type=str, default= "data/Tif", help="Directory with .tif files (ordered by date)")
-    parser.add_argument('--output', type=str, default= "data/Dataset.h5", help="Output path to .h5 file")
+    
+
+    parser = argparse.ArgumentParser(description="Convert multiple zones of .tif time series to a single flat .h5 dataset for CNN training.")
+    parser.add_argument('--data_dir', type=str, default="data/Tif", help="Root directory containing subfolders per zone")
+    parser.add_argument('--output', type=str, default="data/Dataset.h5", help="Output path to the flat .h5 file")
     parser.add_argument('--patch_size', type=int, default=24, help="Patch size (assumes square)")
-    parser.add_argument('--stride', type=int, default=24, help="Stride between patches") # default padding=24=patch_size for Non-overlapping patches
+    parser.add_argument('--stride', type=int, default=24, help="Stride between patches")
 
     args = parser.parse_args()
 
-    build_dataset(
-        tif_dir=args.tif_dir,
+    build_all_zones_dataset(
+        data_dir=args.data_dir,
         output_path=args.output,
         patch_size=(args.patch_size, args.patch_size),
         stride=args.stride

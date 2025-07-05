@@ -9,6 +9,8 @@ import os
 import math
 from tqdm import tqdm
 
+from dateutil.relativedelta import relativedelta
+
 def create_gee_geometries(coords_list, side_km=10):
     """
     Creates square geometries of side `side_km` km (default 10 km) centered on each coordinate.
@@ -66,29 +68,24 @@ def generate_half_month_ranges(start_date, end_date):
 
     return date_list
 
-def generate_date_ranges(start_date, end_date, interval_days=15):
+
+
+def generate_monthly_ranges(start_date, end_date):
     """
-    Génère des intervalles de dates de `interval_days` jours entre `start_date` et `end_date`.
-
-    Args:
-        start_date (str): Date de début au format 'YYYY-MM-DD'.
-        end_date (str): Date de fin au format 'YYYY-MM-DD'.
-        interval_days (int): Longueur de chaque intervalle en jours.
-
-    Returns:
-        List[Tuple[str, str]]: Liste de tuples (date_début, date_fin).
+    Génère une liste de tuples représentant les intervalles mensuels
+    entre start_date et end_date (inclus).
     """
     date_list = []
     current = datetime.strptime(start_date, '%Y-%m-%d')
     end = datetime.strptime(end_date, '%Y-%m-%d')
 
     while current < end:
-        next_date = current + timedelta(days=interval_days)
+        next_month = current + relativedelta(months=1)
         date_list.append((
             current.strftime('%Y-%m-%d'),
-            min(next_date, end).strftime('%Y-%m-%d')
+            min(next_month, end).strftime('%Y-%m-%d')
         ))
-        current = next_date
+        current = next_month
 
     return date_list
 
@@ -268,7 +265,11 @@ def mask_no_labeled_pixel_all_zones(base_dir, label_filename="labels_raster.tif"
         with rasterio.open(label_path) as src:
             img_reference = src.read(1)
         
-        tif_files = sorted([os.path.join(zone_path, f) for f in os.listdir(zone_path) if f.endswith('.tif')])
+        tif_files = sorted([
+            os.path.join(zone_path, f)
+            for f in os.listdir(zone_path)
+            if f.endswith('.tif') and not f.endswith('_masked.tif')
+        ])
         
         for tif_path in tqdm(tif_files, desc=f"Masking TIFFs in {zone_name}"):
             with rasterio.open(tif_path) as src:
