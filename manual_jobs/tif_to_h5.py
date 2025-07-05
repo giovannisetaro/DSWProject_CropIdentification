@@ -27,7 +27,7 @@ def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
                 patches.append(patch)
 
                 # Convertir pixel (i,j) en coordonnées géospatiales (x,y)
-                x, y = rasterio.transform.xy(transform, i, j)
+                x, y = rasterio.transform.xy(transform, i, j) # upper left corner of the patch
                 coords.append((x, y))
 
     return patches, coords
@@ -77,24 +77,30 @@ def process_zone(zone_dir, patch_size=(24, 24), stride=24):
     label_path = os.path.join(zone_dir, 'labels_raster_masked.tif')
     with rasterio.open(label_path) as label_dataset:
         label_img = label_dataset.read(1)
+        Id_Parcelles_img = label_dataset.read(2)
         label_patches = []
+        Id_Parcelles_patches = []
         for (x, y) in all_coords:
             row, col = rasterio.transform.rowcol(label_dataset.transform, x, y)
-            patch = label_img[row:row+patch_size[0], col:col+patch_size[1]]
-            label_patches.append(patch)
+            Label_patch = label_img[row:row+patch_size[0], col:col+patch_size[1]]
+            ID_Parcelle_patch = Id_Parcelles_img[row:row+patch_size[0], col:col+patch_size[1]]
+            label_patches.append(Label_patch)
+            Id_Parcelles_patches.append(ID_Parcelle_patch)
         label_patches = np.stack(label_patches)
+        Id_Parcelles_patches = np.stack(Id_Parcelles_patches)
 
     # Masquer les patches vides
     non_empty_mask = np.any(stacked_patches != 0, axis=(1, 2, 3, 4))
     filtered_patches = stacked_patches[non_empty_mask]
     filtered_labels = label_patches[non_empty_mask]
+    filtered_ID_Parcelles = Id_Parcelles_patches[non_empty_mask]
     filtered_coords = np.array(all_coords)[non_empty_mask]
 
     # Dates en np.datetime64 (même pour tous les patches)
     dates_array = np.array(list_of_dates, dtype='datetime64[ns]')
 
 
-    return filtered_patches, filtered_labels, filtered_coords, dates_array
+    return filtered_patches, filtered_labels,filtered_ID_Parcelles, filtered_coords, dates_array
 
 def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=24):
     zones = [os.path.join(data_dir, d) for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
@@ -102,17 +108,19 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
 
     all_data = []
     all_labels = []
+    all_ID_Parcelles = []
     all_coords = []
     dates_ref = None
 
     for zone_dir in zones:
-        data, labels, coords, dates = process_zone(zone_dir, patch_size, stride)
+        data, labels,ID_Parcelles, coords, dates = process_zone(zone_dir, patch_size, stride)
 
         if dates_ref is None:
             dates_ref = dates  # récupérer la référence une fois
 
         all_data.append(data)
         all_labels.append(labels)
+        all_ID_Parcelles.append(ID_Parcelles)
         all_coords.append(coords)
 
     dates_str = [str(d) for d in dates_ref if d is not None]
@@ -120,12 +128,14 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
     # Concaténer tous les patchs des zones
     all_data = np.concatenate(all_data, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
+    all_ID_Parcelles = np.concatenate(all_ID_Parcelles, axis=0)
     all_coords = np.concatenate(all_coords, axis=0)
 
     # Sauvegarder dans un fichier h5 plat
     with h5py.File(output_path, 'w') as hf:
         hf.create_dataset("data", data=all_data.astype(np.float32), compression="gzip")
         hf.create_dataset("labels", data=all_labels.astype(np.float32), compression="gzip")
+        hf.create_dataset("ID_Parcelles", data=all_ID_Parcelles.astype(np.float32), compression="gzip")
         hf.create_dataset("coords", data=all_coords, compression="gzip")
         dt = h5py.string_dtype(encoding='utf-8')
         hf.create_dataset("dates", data=np.array(dates_str, dtype=dt))
@@ -135,6 +145,7 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
 #└── dataset/
 #    ├── data     [N, T, C, H, W]
 #    ├── labels   [N, H, W]
+#    ├── ID_Parcelles   [N, H, W]
 #    ├── coords   [N, 2]
 #    └── dates    [T]
 

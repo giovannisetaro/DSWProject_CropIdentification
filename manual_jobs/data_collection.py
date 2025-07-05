@@ -121,7 +121,7 @@ def get_median_image(start, end, Geometry_data_collect):
 
     
     n_images = median.size().getInfo()
-    median_list = median.toList(s2.size())
+    median_list = median.toList(median.size())
 
     total_n_img = 0
     print(f"median images for date {start} retrieved ! infos : ")
@@ -217,21 +217,39 @@ def rasterize_labels_per_zone(
             continue
 
         # Rasterisation
-        shapes = ((geom, value) for geom, value in zip(gdf_zone.geometry, gdf_zone[label_column]))
+
+        #  Rasterisation of classes
+        shapes_label = ((geom, value) for geom, value in zip(gdf_zone.geometry, gdf_zone[label_column]))
         label_raster = rasterize(
-            shapes,
+            shapes_label,
             out_shape=(meta['height'], meta['width']),
             transform=transform,
             fill=0,
             dtype=rasterio.uint8
         )
 
-        # Écriture du fichier raster labelisé
-        meta.update({'count': 1, 'dtype': rasterio.uint8})
+        # 4. Rasterisation of ID_PARCEL 
+        shapes_id = ((geom, int(pid)) for geom, pid in zip(gdf_zone.geometry, gdf_zone["ID_PARCEL"]))
+        id_raster = rasterize(
+            shapes_id,
+            out_shape=(meta['height'], meta['width']),
+            transform=transform,
+            fill=0,
+            dtype=rasterio.uint32
+        )
+
+        # 5. Mise à jour des métadonnées
+        meta.update({
+            'count': 2,                     # 2 couches : label + ID_PARCEL
+            'dtype': 'uint32'              # pour être sûr que ID_PARCEL soit stocké correctement
+        })
+
+        # 6. Sauvegarde dans le fichier
         label_path = os.path.join(zone_path, label_filename)
 
         with rasterio.open(label_path, 'w', **meta) as dst:
-            dst.write(label_raster, 1)
+            dst.write(label_raster.astype('uint32'), 1)  # couche 1 : labels
+            dst.write(id_raster, 2)                      # couche 2 : ID_PARCEL
 
         print(f"✅ ground trouth label saved : {label_path}")
 

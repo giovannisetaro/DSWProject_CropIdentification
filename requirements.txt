@@ -9,4 +9,4 @@ torch
 numpy
 tqdm
 argparse
-panda
+pandas
