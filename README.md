@@ -1,28 +1,33 @@
 
-### Crop mapping from image time series: deep learning
+# Crop mapping from multispectral image time series: deep learning
 
+## Dataset Description
 
-# Ground truth dataset used to label the dataset: 
+### Ground Truth (Crop Labels) 
+
+We use the Registre Parcellaire Graphique (RPG) 2023 as the reference for crop types and parcel boundaries in France.
+
 - ([online visualisation](https://www.geoportail.gouv.fr/donnees/registre-parcellaire-graphique-rpg-2023))
 - ([downloading link](https://data.geopf.fr/telechargement/download/RPG/RPG_2-2__GPKG_LAMB93_FXX_2023-01-01/RPG_2-2__GPKG_LAMB93_FXX_2023-01-01.7z))
 
 
-# Satelite images used to train the models : 
-- [Harmonized Sentinel-2 MSI: MultiSpectral Instrument, Level-2A (SR)](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED?hl=fr)
+### Satellite Data
+We rely on Sentinel-2 Level-2A (Surface Reflectance) images: [Harmonized Sentinel-2 MSI: MultiSpectral Instrument, Level-2A (SR)](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED?hl=fr)
 
 
 We leverages 4 spectral bands from Sentinel-2 satellites to perform crop detection. These bands allow us to extract detailed information about vegetation based on light reflectance at specific wavelengths.
 
-# The following bands are used:
+### The following bands are used:
 
-Band 	Resolution	Wavelength (S2A / S2B)	
-B2	10 m	496.6 nm / 492.1 nm	Blue	Chlorophyll detection, cloud cover analysis
-B3	10 m	560 nm / 559 nm	Green	Vegetation contrast, plant health analysis
-B4	10 m	664.5 nm / 665 nm	Red	NDVI calculation, vegetation growth tracking
-B8	10 m	835.1 nm / 833 nm	NIR (Near Infrared)	Biomass detection, distinguishing bare soil from vegetation
+| Band | Name  | Resolution | Wavelength (S2A / S2B) | Description                                         |
+| ---- | ----- | ---------- | ---------------------- | --------------------------------------------------- |
+| B2   | Blue  | 10 m       | 496.6 / 492.1 nm       | Chlorophyll detection, cloud cover analysis         |
+| B3   | Green | 10 m       | 560 / 559 nm           | Vegetation contrast, plant health analysis          |
+| B4   | Red   | 10 m       | 664.5 / 665 nm         | NDVI calculation, vegetation growth tracking        |
+| B8   | NIR   | 10 m       | 835.1 / 833 nm         | Biomass detection, distinguishes soil vs vegetation |
 
 
-
+# Models 
 
 ## Deep Learning Model Overview : 
 Our model is designed to classify each pixel of a multispectral time series image into crop types. It combines temporal and spatial feature extraction using a hybrid CNN architecture.
