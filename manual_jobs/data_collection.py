@@ -8,6 +8,7 @@ import ee
 import os
 import math
 from tqdm import tqdm
+import numpy as np
 
 from dateutil.relativedelta import relativedelta
 
@@ -307,3 +308,27 @@ def mask_no_labeled_pixel_all_zones(base_dir, label_filename="labels_raster.tif"
                 os.remove(tif_path)
         
         print(f"✅ Masking done for zone {zone_name}")
+
+
+def count_total_nan_in_tifs(base_dir="../data/Tif"):
+    total_nan_global = 0
+
+    for zone in sorted(os.listdir(base_dir)):
+        zone_path = os.path.join(base_dir, zone)
+        if not os.path.isdir(zone_path):
+            continue
+        total_nan_zone = 0
+        print(f"Traitement de la zone : {zone}")
+
+        for fname in os.listdir(zone_path):
+            if fname.endswith('.tif') and 'labels' not in fname:
+                fpath = os.path.join(zone_path, fname)
+                with rasterio.open(fpath) as src:
+                    img = src.read(1)
+                    nan_count = np.isnan(img).sum()
+                    total_nan_zone += nan_count
+        print(f"  Nombre total de NaN dans {zone}: {total_nan_zone}")
+        total_nan_global += total_nan_zone
+
+    print(f"Nombre total de NaN dans toutes les zones : {total_nan_global}")
+    return total_nan_global

@@ -16,6 +16,8 @@ import warnings
 def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
     patches = []
     coords = []
+    #nan_counts = []
+    #fully_nan_count = 0
     with rasterio.open(image_path) as src:
         transform = src.transform
         width, height = src.width, src.height
@@ -26,9 +28,20 @@ def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
                 patch = src.read(window=window)  # shape: (bands, H, W)
                 patches.append(patch)
 
+                # Compter les NaN dans le patch (tous canaux confondus)
+                nan_count = np.isnan(patch).sum()
+                #nan_counts.append(nan_count)
+                                # Vérifier si tout le patch est NaN
+                #if np.isnan(patch).all():
+                #    fully_nan_count += 1
+
+                
                 # Convertir pixel (i,j) en coordonnées géospatiales (x,y)
                 x, y = rasterio.transform.xy(transform, i, j) # upper left corner of the patch
                 coords.append((x, y))
+        #print(f"Patchs complètement NaN : {fully_nan_count}")
+        #print(f"Nombre de patchs extraits pour l'image {image_path} : {len(patches)}")
+        #print(f"Nombre total de NaN dans tous les patchs de cette image(a travers tt les bandes) : {np.sum(nan_counts)}")
 
     return patches, coords
 
@@ -64,6 +77,7 @@ def process_zone(zone_dir, patch_size=(24, 24), stride=24):
         list_of_dates.append(date)
         if all_coords is None:
             all_coords = coords
+    print(f"list of patch set for zone {zone_dir} =",len(list_of_patch_sets))
 
     # Empiler le temps pour chaque patch spatial
     stacked_patches = []
@@ -91,6 +105,7 @@ def process_zone(zone_dir, patch_size=(24, 24), stride=24):
 
     # Masquer les patches vides
     non_empty_mask = np.any(stacked_patches != 0, axis=(1, 2, 3, 4))
+    print("Nombre de patchs conservés :", np.sum(non_empty_mask), "sur", len(stacked_patches))
     filtered_patches = stacked_patches[non_empty_mask]
     filtered_labels = label_patches[non_empty_mask]
     filtered_ID_Parcelles = Id_Parcelles_patches[non_empty_mask]
@@ -130,6 +145,16 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
     all_labels = np.concatenate(all_labels, axis=0)
     all_ID_Parcelles = np.concatenate(all_ID_Parcelles, axis=0)
     all_coords = np.concatenate(all_coords, axis=0)
+
+    # mask to remove NaN
+    valid_mask = ~np.isnan(all_data).any(axis=(1, 2, 3, 4))  # (N, T, C, H, W) 
+
+    print(f"Patchs valides : {np.sum(valid_mask)} / {len(all_data)}")
+
+    all_data = all_data[valid_mask]
+    all_labels = all_labels[valid_mask]
+    all_ID_Parcelles = all_ID_Parcelles[valid_mask]
+    all_coords = all_coords[valid_mask]
 
     # Sauvegarder dans un fichier h5 plat
     with h5py.File(output_path, 'w') as hf:
