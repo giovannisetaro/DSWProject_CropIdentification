@@ -9,30 +9,6 @@ import re
 
 
 
-def mask_no_labeled_pixel(tif_dir):
-    with rasterio.open('labels_raster.tif') as src:
-        img_reference = src.read(1)  # lire la première bande
-    # Get all tif files sorted by date
-    tif_files = sorted([os.path.join(tif_dir, f) for f in os.listdir(tif_dir) if f.endswith('.tif')])
-
-    for tif_path in tqdm(tif_files, desc="mask des TIF"):
-        with rasterio.open(tif_path) as src:
-            data = src.read()  # Shape: (bands, height, width)
-            profile = src.profile
-            # Masque: True là où la valeur de référence est 0
-            mask = (img_reference == 0)
-            # Appliquer le masque à toutes les bandes
-            data[:, mask] = 0
-        # Sauvegarde dans un nouveau fichier
-        base_name = os.path.basename(tif_path).replace('.tif', '_masked.tif')
-        output_path = os.path.join('data/Tif', base_name)
-
-        # Écriture du fichier masqué
-        with rasterio.open(output_path, 'w', **profile) as dst:
-            dst.write(data)
-
-
-
 
 def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
     patches = []
@@ -54,11 +30,13 @@ def extract_patches_with_coords(image_path, patch_size=(24, 24), stride=24):
     return patches, coords
 
 
+
 def extract_date_from_filename(filename):
-    match = re.search(r'(\d{8})', filename)
+    match = re.search(r'(\d{8})', filename)  # Cherche une date au format "YYYYMMDD"
     if match:
-        return match.group(1)  # YYYYMMDD
-    return "Unknown"
+        date_str = match.group(1)
+        return pd.to_datetime(date_str, format="%Y%m%d")
+    return None  # ou "Unknown" si tu préfères
 
 
 
@@ -112,9 +90,9 @@ def build_dataset(tif_dir, label_path, output_path, patch_size=(24, 24), stride=
     filtered_coords = np.array(all_coords)[non_empty_mask]
 
 
-    # Convertir la liste de dates en tableau numpy dtype string
-    dt = h5py.string_dtype(encoding='utf-8')
-    dates_array = np.array(list_of_dates, dtype=dt)
+    # Converting the list of pd.datetimes into an array to store it in the .h5
+    dates_array = np.array(list_of_dates, dtype='datetime64[ns]')
+    group.create_dataset("dates", data=dates_array)
     # Save to .h5
 
     with h5py.File(output_path, 'w') as hf:
