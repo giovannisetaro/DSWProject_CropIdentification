@@ -124,8 +124,8 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
 
     # Sauvegarder dans un fichier h5 plat
     with h5py.File(output_path, 'w') as hf:
-        hf.create_dataset("data", data=all_data, compression="gzip")
-        hf.create_dataset("labels", data=all_labels, compression="gzip")
+        hf.create_dataset("data", data=all_data.astype(np.float32), compression="gzip")
+        hf.create_dataset("labels", data=all_labels.astype(np.float32), compression="gzip")
         hf.create_dataset("coords", data=all_coords, compression="gzip")
         dt = h5py.string_dtype(encoding='utf-8')
         hf.create_dataset("dates", data=np.array(dates_str, dtype=dt))
