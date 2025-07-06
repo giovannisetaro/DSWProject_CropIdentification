@@ -12,6 +12,7 @@ class CropDataset(Dataset):
             self.Y = torch.tensor(hf['labels'][:]).long()  # [N, H, W]
             self.coords = hf['coords'][:] 
             self.dates = hf['dates'][:]
+            self.zones = hf['zones'][:]
             self.ID_Parcelles = hf["ID_Parcelles"][:]
         self.transform = transform
 
@@ -28,6 +29,11 @@ class CropDataset(Dataset):
     
     def get_coord(self, idx):
         return self.coords[idx]
+    
+    def get_zone(self, idx):
+        zone = self.zones[idx]
+        zone = str(zone)
+        return zone[2:-1]
 
 def get_dataloaders_from_h5(h5_path, batch_size=8, shuffle=True, transform=None, val_ratio=0.2, random_seed=42):
     dataset = CropDataset(h5_path, transform=transform)

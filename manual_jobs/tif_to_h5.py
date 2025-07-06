@@ -55,6 +55,50 @@ def extract_date_from_filename(filename):
 
 
 
+def interpolate_nan_along_time(tensor):
+    """
+    Interpolates missing (NaN) values along the time axis for each pixel (C, H, W) independently.
+    
+    Parameters:
+    tensor (np.ndarray): Input tensor of shape (T, C, H, W)
+
+    Returns:
+    np.ndarray: Tensor with NaNs replaced by temporal interpolation
+    """
+    T, C, H, W = tensor.shape
+    tensor_interp = tensor.copy()
+
+    total = C * H * W
+    with tqdm(total=total, desc="Interpolating NaNs", leave=False) as pbar:
+        for c in range(C):
+            for h in range(H):
+                for w in range(W):
+                    ts = tensor[:, c, h, w]
+                    if np.isnan(ts).any():
+                        valid_idx = np.where(~np.isnan(ts))[0]
+                        if len(valid_idx) == 0:
+                            pass  # Leave as NaN
+                        elif len(valid_idx) == 1:
+                            tensor_interp[:, c, h, w] = ts[valid_idx[0]]
+                        else:
+                            for t in range(T):
+                                if np.isnan(ts[t]):
+                                    before = valid_idx[valid_idx < t]
+                                    after = valid_idx[valid_idx > t]
+                                    if before.size > 0 and after.size > 0:
+                                        t_before = before[-1]
+                                        t_after = after[0]
+                                        val = (ts[t_before] + ts[t_after]) / 2.0
+                                    elif after.size > 0:
+                                        val = ts[after[0]]
+                                    elif before.size > 0:
+                                        val = ts[before[-1]]
+                                    else:
+                                        continue
+                                    tensor_interp[t, c, h, w] = val
+                    pbar.update(1)
+    return tensor_interp
+
 
 def process_zone(zone_dir, patch_size=(24, 24), stride=24):
     # Récupérer tous les .tif dans la zone (excepté labels)
@@ -68,23 +112,32 @@ def process_zone(zone_dir, patch_size=(24, 24), stride=24):
 
     list_of_patch_sets = []
     list_of_dates = []
+    list_of_zones = []
     all_coords = None
 
     for tif in tqdm(tif_files, desc=f"Extracting patches in {os.path.basename(zone_dir)}"):
         patches, coords = extract_patches_with_coords(tif, patch_size, stride)
-        date = extract_date_from_filename(os.path.basename(tif))
         list_of_patch_sets.append(patches)
-        list_of_dates.append(date)
         if all_coords is None:
             all_coords = coords
     print(f"list of patch set for zone {zone_dir} =",len(list_of_patch_sets))
 
     # Empiler le temps pour chaque patch spatial
     stacked_patches = []
+
     for idx in range(len(all_coords)):
+        list_of_zones.append(os.path.basename(zone_dir))
+
+        date = extract_date_from_filename(os.path.basename(tif))
+        list_of_dates.append(date)
+
         time_series = [list_of_patch_sets[t][idx] for t in range(len(tif_files))]
+
         stacked = np.stack(time_series, axis=0)  # (T, C, H, W)
+        stacked = interpolate_nan_along_time(stacked)
         stacked_patches.append(stacked)
+
+
     stacked_patches = np.stack(stacked_patches)  # (N, T, C, H, W)
 
     # Traiter le raster des labels
@@ -110,12 +163,13 @@ def process_zone(zone_dir, patch_size=(24, 24), stride=24):
     filtered_labels = label_patches[non_empty_mask]
     filtered_ID_Parcelles = Id_Parcelles_patches[non_empty_mask]
     filtered_coords = np.array(all_coords)[non_empty_mask]
+    filtered_zones = np.array(list_of_zones)[non_empty_mask]
+    filtered_dates = np.array(list_of_dates)[non_empty_mask]
 
-    # Dates en np.datetime64 (même pour tous les patches)
-    dates_array = np.array(list_of_dates, dtype='datetime64[ns]')
+   
 
 
-    return filtered_patches, filtered_labels,filtered_ID_Parcelles, filtered_coords, dates_array
+    return filtered_patches, filtered_labels,filtered_ID_Parcelles, filtered_coords, filtered_dates, filtered_zones
 
 def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=24):
     zones = [os.path.join(data_dir, d) for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
@@ -125,36 +179,43 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
     all_labels = []
     all_ID_Parcelles = []
     all_coords = []
-    dates_ref = None
+    all_zone = []
+    all_dates = []
+    
 
     for zone_dir in zones:
-        data, labels,ID_Parcelles, coords, dates = process_zone(zone_dir, patch_size, stride)
+        data, labels,ID_Parcelles, coords, dates, zones_ref  = process_zone(zone_dir, patch_size, stride)
 
-        if dates_ref is None:
-            dates_ref = dates  # récupérer la référence une fois
 
         all_data.append(data)
         all_labels.append(labels)
         all_ID_Parcelles.append(ID_Parcelles)
         all_coords.append(coords)
+        all_zone.append(zones_ref)
+        all_dates.append(dates)
+  
 
-    dates_str = [str(d) for d in dates_ref if d is not None]
-
+    
     # Concaténer tous les patchs des zones
     all_data = np.concatenate(all_data, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
     all_ID_Parcelles = np.concatenate(all_ID_Parcelles, axis=0)
     all_coords = np.concatenate(all_coords, axis=0)
+    all_zone = np.concatenate(all_zone, axis=0)
+    all_dates = np.concatenate(all_dates, axis=0)
 
     # mask to remove NaN
-    valid_mask = ~np.isnan(all_data).any(axis=(1, 2, 3, 4))  # (N, T, C, H, W) 
+    valid_mask = ~np.isnan(all_data).any(axis=(1, 2, 3, 4))  # (N, T, C, H, W) ###################### faut changer ça c'est pas top
 
-    print(f"Patchs valides : {np.sum(valid_mask)} / {len(all_data)}")
+    print(f"Patchs valides : {np.sum(valid_mask)} / {len(all_data)}") 
 
     all_data = all_data[valid_mask]
     all_labels = all_labels[valid_mask]
     all_ID_Parcelles = all_ID_Parcelles[valid_mask]
     all_coords = all_coords[valid_mask]
+    all_zone = all_zone[valid_mask]
+    all_dates = all_dates[valid_mask]
+    
 
     # Sauvegarder dans un fichier h5 plat
     with h5py.File(output_path, 'w') as hf:
@@ -162,8 +223,8 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
         hf.create_dataset("labels", data=all_labels.astype(np.float32), compression="gzip")
         hf.create_dataset("ID_Parcelles", data=all_ID_Parcelles.astype(np.float32), compression="gzip")
         hf.create_dataset("coords", data=all_coords, compression="gzip")
-        dt = h5py.string_dtype(encoding='utf-8')
-        hf.create_dataset("dates", data=np.array(dates_str, dtype=dt))
+        hf.create_dataset("dates", data=np.array(all_dates, dtype = h5py.string_dtype(encoding='utf-8')))
+        hf.create_dataset("zones", data=np.array(all_zone, dtype = h5py.string_dtype(encoding='utf-8')))
 
     print(f"✅ Saved flat dataset with {all_data.shape[0]} patches to {output_path}")
 #dataset.h5
@@ -172,7 +233,8 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
 #    ├── labels   [N, H, W]
 #    ├── ID_Parcelles   [N, H, W]
 #    ├── coords   [N, 2]
-#    └── dates    [T]
+#    ├── zones    [N, 1]
+#    └── dates    [N, 1]
 
 # with : for one i = 
 # x = hf["dataset/data"][i]       # [T, C, H, W]
