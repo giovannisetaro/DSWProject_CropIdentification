@@ -44,3 +44,6 @@ for x, y in tqdm(zip(X, Y), total=len(X)):
 # Convert to NumPy arrays for scikit-learn
 X_tabular = np.stack(features_list)
 y_tabular = np.array(labels_list)
+
+# Save the tabular dataset to a .npz file for later use
+np.savez("data/tabular_data.npz", X=X_tabular, y=y_tabular)
