@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from data import get_dataloaders_from_h5
+from data import get_dataset_splits_from_h5
 from CNN_Model import CropTypeClassifier
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import KFold
 import os
 from tqdm import tqdm
 
@@ -24,21 +26,43 @@ def train_loop(model, dataloader, optimizer, criterion, device):
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    train_loader, val_loader = get_dataloaders_from_h5('data/Dataset.h5', batch_size=8)      #val_loader :Il faut calculer la perte (et métriques) sur la validation après chaque epoch pour monitorer le surapprentissage.
-    model = CropTypeClassifier(num_classes=26).to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=1e-3)
 
-    os.makedirs("checkpoints", exist_ok=True)  # crée dossier checkpoints si absent
 
-    for epoch in range(1, 2):
-        train_loss = train_loop(model, train_loader, optimizer, criterion, device)
-        print(f"Epoch {epoch}, Train loss: {train_loss:.4f}")
+    # Load the dataset and split off the test set
+    train_val_dataset, _ = get_dataset_splits_from_h5("data/Dataset.h5", test_ratio=0.1) 
 
-        # Sauvegarde les poids après chaque epoch
-        checkpoint_path = f"checkpoints/crop_model_epoch{epoch}.pth"
-        torch.save(model.state_dict(), checkpoint_path)
-        print(f"Model saved to {checkpoint_path}")
+    # Set up K-Fold Cross Validation (5 folds)
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)   
+
+    # Iterate over each fold
+    for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
+        print(f"\nFold {fold + 1}")
+
+        # Create train and validation subsets
+        train_subset = Subset(train_val_dataset, train_idx)
+        val_subset = Subset(train_val_dataset, val_idx)
+
+        # Create DataLoaders
+        train_loader = DataLoader(train_subset, batch_size=8, shuffle=True)
+        val_loader = DataLoader(val_subset, batch_size=8, shuffle=False)
+
+        # Initialize model, loss function and optimizer
+        model = CropTypeClassifier(num_classes=26).to(device)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = Adam(model.parameters(), lr=1e-3)
+
+        # Create checkpoints directory if it doesn't exist
+        os.makedirs("checkpoints", exist_ok=True)
+
+        # Training loop (can increase number of epochs)
+        for epoch in range(1, 2):
+            train_loss = train_loop(model, train_loader, optimizer, criterion, device)
+            print(f"Epoch {epoch}, Fold {fold+1}, Train loss: {train_loss:.4f}")
+
+            # Save model weights after each fold and epoch
+            checkpoint_path = f"checkpoints/crop_model_fold{fold+1}_epoch{epoch}.pth"
+            torch.save(model.state_dict(), checkpoint_path)
+            print(f"Model saved to {checkpoint_path}")
 
 if __name__ == "__main__":
     main()

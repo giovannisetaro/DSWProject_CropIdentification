@@ -4,9 +4,6 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torch.utils.data import Subset
 from sklearn.model_selection import train_test_split
 
-
-
-
 class CropDataset(Dataset):
     def __init__(self, h5_path, transform=None):
         with h5py.File(h5_path, 'r') as hf:
@@ -52,7 +49,7 @@ def get_dataset_splits_from_h5(h5_path, test_ratio=0.2, random_seed=42, transfor
     dataset = CropDataset(h5_path, transform=transform)
     indices = list(range(len(dataset)))
     
-    # split tra train+val e test
+    # split of train+val and test
     train_val_indices, test_indices = train_test_split(
         indices, test_size=test_ratio, random_state=random_seed, shuffle=True
     )
