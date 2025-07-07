@@ -10,3 +10,4 @@ numpy
 tqdm
 argparse
 pandas
+seaborn
