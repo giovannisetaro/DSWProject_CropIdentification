@@ -1,43 +1,87 @@
 import torch
 import torch.nn as nn
-from CNN_Model import CropTypeClassifier  # adapte selon ton projet
+from CNN_Model import CropTypeClassifier  
 from data import get_dataloaders_from_h5
 
-def evaluate(model, dataloader, device):
+
+def evaluate(model, dataloader, device, num_classes):
     model.eval()
-    total_correct = 0
-    total_pixels = 0
-    total_loss = 0
     criterion = nn.CrossEntropyLoss()
-    
+
+    # Confusion matrix: rows = true classes, cols = predicted classes
+    confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    total_loss = 0.0
+    total_pixels = 0
+
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
             outputs = model(x)
             loss = criterion(outputs, y)
             total_loss += loss.item() * x.size(0)
-            
+
             preds = outputs.argmax(dim=1)
-            total_correct += (preds == y).sum().item()
-            total_pixels += y.numel()
-    
+
+            # Flatten for confusion matrix
+            preds_flat = preds.view(-1)
+            labels_flat = y.view(-1)
+
+            # Update confusion matrix
+            for t, p in zip(labels_flat, preds_flat):
+                confusion_matrix[t.long(), p.long()] += 1
+
+            total_pixels += labels_flat.numel()
+
+    # Compute global accuracy
+    correct = confusion_matrix.diag().sum().item()
+    accuracy = correct / total_pixels
+
+    # Compute per-class precision, recall, F1
+    TP = confusion_matrix.diag().float()
+    FP = confusion_matrix.sum(dim=0).float() - TP
+    FN = confusion_matrix.sum(dim=1).float() - TP
+
+    epsilon = 1e-7  # pour éviter la division par zéro
+    precision = TP / (TP + FP + epsilon)
+    recall = TP / (TP + FN + epsilon)
+    f1 = 2 * (precision * recall) / (precision + recall + epsilon)
+
+    # Macro-averaged metrics
+    precision_macro = precision.mean().item()
+    recall_macro = recall.mean().item()
+    f1_macro = f1.mean().item()
     avg_loss = total_loss / len(dataloader.dataset)
-    accuracy = total_correct / total_pixels
-    
+
+    # Display metrics
     print(f"Validation Loss: {avg_loss:.4f}")
     print(f"Validation Pixel Accuracy: {accuracy:.4f}")
+    print(f"Macro Precision: {precision_macro:.4f}")
+    print(f"Macro Recall: {recall_macro:.4f}")
+    print(f"Macro F1-score: {f1_macro:.4f}")
+
+    # Return metrics in a dict, may be uses later on
+    return {
+        'loss': avg_loss,
+        'accuracy': accuracy,
+        'precision_macro': precision_macro,
+        'recall_macro': recall_macro,
+        'f1_macro': f1_macro,
+    }
+
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Charger le dataset validation (adapte selon ta fonction)
+
+    # Load dataset
     _, val_loader = get_dataloaders_from_h5('data/Dataset.h5', batch_size=8)
-    
-    model = CropTypeClassifier(num_classes=26)
+
+    num_classes = 26  # Let's use the 26 global classes we previously define
+    model = CropTypeClassifier(num_classes=num_classes)
     model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
     model.to(device)
-    
-    evaluate(model, val_loader, device)
+
+    evaluate(model, val_loader, device, num_classes)
+
 
 if __name__ == "__main__":
     main()
