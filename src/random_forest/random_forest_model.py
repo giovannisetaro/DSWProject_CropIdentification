@@ -60,7 +60,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
     # Create XGBoost model with fixed params
     clf = XGBClassifier(
         device ='cuda',
-        tree_method='hist',
+        tree_method='gpu_hist',
         eval_metric='mlogloss',
         num_class=num_classes,
         n_estimators=100,
@@ -85,7 +85,7 @@ print(f"Mean CV accuracy: {np.mean(fold_accuracies):.4f}")
 # Train final model on full train+val set
 final_clf = XGBClassifier(
     device ='cuda',
-    tree_method='hist',
+    tree_method='gpu_hist',
     eval_metric='mlogloss',
     num_class=num_classes,
     n_estimators=100,
