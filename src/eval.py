@@ -109,7 +109,7 @@ def main():
     model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
     model.to(device)
 
-    evaluate(model, val_loader, device, num_classes)
+    evaluate(model, test_loader, device, num_classes=26)
 
 
 if __name__ == "__main__":
