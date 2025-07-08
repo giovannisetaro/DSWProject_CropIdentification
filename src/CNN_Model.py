@@ -168,9 +168,10 @@ class CropTypeClassifier(nn.Module):
         self.unet = UNet(in_ch=temporal_out_channels, out_ch=num_classes)
 
     def forward(self, x):
-        # x: [B, 4, 12, 24, 24]
         x = self.temporal_cnn(x)   # [B, temporal_out_channels, 24, 24]
         x = self.unet(x)           # [B, num_classes, 24, 24]
+
+        # x final shape : [B, 4, 12, 24, 24]
         return x
     
 
