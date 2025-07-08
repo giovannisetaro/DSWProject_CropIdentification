@@ -1,49 +1,82 @@
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import KFold
+from sklearn.model_selection import train_test_split
 from src.data import get_dataset_splits_from_h5
+from sklearn.model_selection import KFold
 
-# Load tabular features and labels extracted earlier
+# 1. Load data
 data = np.load("data/tabular_pixelwise_data.npz")
-X_tabular = data["X"]  # shape: [num_samples, features_dim]
-y_tabular = data["y"]  # shape: [num_samples]
+X = data["X"]
+y = data["y"]
 
-# Use your existing function to split dataset into train+val and test subsets
+# 2. Split into train_val and test
 train_val_dataset, test_dataset = get_dataset_splits_from_h5("data/Dataset.h5", test_ratio=0.2)
+train_val_idx = np.array(train_val_dataset.indices)
+test_idx = np.array(test_dataset.indices)
 
-# Get indices corresponding to train+val and test sets
-train_val_indices = train_val_dataset.indices
-test_indices = test_dataset.indices
+X_train_val = X[train_val_idx]
+y_train_val = y[train_val_idx]
+X_test = X[test_idx]
+y_test = y[test_idx]
 
-# Initialize K-Fold cross-validation on train+val set indices
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
+# 3. Split train_val into train and validation
+X_train, X_val, y_train, y_val, idx_train, idx_val = train_test_split(
+    X_train_val, y_train_val, train_val_idx, test_size=0.2, random_state=42, stratify=y_train_val
+)
 
-for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_indices)):
-    print(f"Fold {fold + 1}")
+# 4. HPO: test different parameter combinations
+param_grid = [
+    {"n_estimators": 100, "max_depth": 10},
+    {"n_estimators": 200, "max_depth": 15},
+    {"n_estimators": 50, "max_depth": 10},
+    {"n_estimators": 150, "max_depth": 5},
+    {"n_estimators": 100, "max_depth": None},
+]
 
-    # Map fold indices to global dataset indices
-    train_global_idx = np.array(train_val_indices)[train_idx]
-    val_global_idx = np.array(train_val_indices)[val_idx]
+best_acc = 0
+best_model = None
+best_params = None
 
-    # Extract feature vectors and labels for train and validation fold subsets
-    X_train_fold = X_tabular[train_global_idx]
-    y_train_fold = y_tabular[train_global_idx]
-    X_val_fold = X_tabular[val_global_idx]
-    y_val_fold = y_tabular[val_global_idx]
+print("Hyperparameter search on validation set:")
+for params in param_grid:
+    clf = RandomForestClassifier(**params, random_state=42)
+    clf.fit(X_train, y_train)
+    y_val_pred = clf.predict(X_val)
+    acc_val = accuracy_score(y_val, y_val_pred)
+    print(f"Params {params} -> Validation Accuracy: {acc_val:.4f}")
 
-    # Initialize and train Random Forest classifier
-    clf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    clf.fit(X_train_fold, y_train_fold)
+    if acc_val > best_acc:
+        best_acc = acc_val
+        best_model = clf
+        best_params = params
 
-    # Predict on validation fold and compute accuracy
-    y_val_pred = clf.predict(X_val_fold)
-    acc_val = accuracy_score(y_val_fold, y_val_pred)
-    print(f"Validation Accuracy Fold {fold + 1}: {acc_val:.4f}")
+# 5. Retrain on full train+val set with best parameters
+X_train_full = X[train_val_idx]
+y_train_full = y[train_val_idx]
+final_model = RandomForestClassifier(**best_params, random_state=42)
+final_model.fit(X_train_full, y_train_full)
 
-# After cross-validation, evaluate on the test set
-X_test = X_tabular[test_indices]
-y_test = y_tabular[test_indices]
-y_test_pred = clf.predict(X_test)
+# 6. Final evaluation on test set
+y_test_pred = final_model.predict(X_test)
 acc_test = accuracy_score(y_test, y_test_pred)
-print(f"Test Accuracy: {acc_test:.4f}")
+
+print("\nBest Hyperparameters:", best_params)
+print(f"Test Accuracy with Best Model: {acc_test:.4f}")
+
+kf = KFold(n_splits=5, shuffle=True, random_state=42)
+fold_accuracies = []
+
+for train_idx, val_idx in kf.split(train_val_idx):
+    X_fold_train = X[train_val_idx[train_idx]]
+    y_fold_train = y[train_val_idx[train_idx]]
+    X_fold_val = X[train_val_idx[val_idx]]
+    y_fold_val = y[train_val_idx[val_idx]]
+
+    clf = RandomForestClassifier(**best_params, random_state=42)
+    clf.fit(X_fold_train, y_fold_train)
+    y_pred = clf.predict(X_fold_val)
+    acc = accuracy_score(y_fold_val, y_pred)
+    fold_accuracies.append(acc)
+
+print(f"\nCross-Validation (5-fold) Accuracy: {np.mean(fold_accuracies):.4f}")
