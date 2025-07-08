@@ -60,6 +60,7 @@ def evaluate(model, dataloader, device, num_classes):
     accuracy = correct / total_pixels
 
     # Compute per-class precision, recall, F1
+    # Here, TP, FP and FN are list
     TP = confusion_matrix.diag().float()
 
     # Since rows = true classes and cols = predicted classes,
@@ -67,7 +68,7 @@ def evaluate(model, dataloader, device, num_classes):
     FP = confusion_matrix.sum(dim=0).float() - TP
     FN = confusion_matrix.sum(dim=1).float() - TP
 
-    epsilon = 1e-9 # Easiest way to avoid 0 div
+    epsilon = 1e-12 # Easiest way to avoid 0 div
     precision = TP / (TP + FP + epsilon)
     recall = TP / (TP + FN + epsilon)
     f1 = 2 * (precision * recall) / (precision + recall + epsilon)
