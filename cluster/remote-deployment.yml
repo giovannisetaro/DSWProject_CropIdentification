@@ -23,12 +23,12 @@ spec:
           - containerPort: 22 
         resources:
           requests:
-            cpu: "1" # minimum number of cpus you want
-            memory: 5Gi
+            cpu: "4" # minimum number of cpus you want
+            memory: 16Gi
             nvidia.com/gpu: 1
           limits:
-            cpu: "2" # maximum number of cpus you want
-            memory: 10Gi # Shut down if it exceeds this RAM
+            cpu: "8" # maximum number of cpus you want
+            memory: 32Gi # Shut down if it exceeds this RAM
             nvidia.com/gpu: 1 # Always set limit to gpus, otherwise you get allocated all the available ones
         volumeMounts:
           - name: dsw-pvc
@@ -39,7 +39,7 @@ spec:
             #mountPath: /dev/shm # shared memory for multiprocessing
       
       nodeSelector:
-        gpu: v100 # Check Grafana for the other types of GPUs available in our cluster
+        gpu: a100 # Check Grafana for the other types of GPUs available in our cluster
       volumes:
         - name: dsw-pvc
           persistentVolumeClaim:
