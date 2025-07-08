@@ -228,7 +228,7 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
 
     print(f"✅ Saved flat dataset with {all_data.shape[0]} patches to {output_path}")
 #dataset.h5
-#└── dataset/
+#└── 
 #    ├── data     [N, T, C, H, W]
 #    ├── labels   [N, H, W]
 #    ├── ID_Parcelles   [N, H, W]
