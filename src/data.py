@@ -89,6 +89,7 @@ def get_dataset_3splits(
         dataset = CropCnnDataset(h5_path, transform=transform)
     elif dataset_type == "rf":
         dataset = CropTabularDataset(h5_path, transform=transform)
+        batch_size = len(dataset)
     else:
         raise ValueError("Invalid dataset_type")
 
