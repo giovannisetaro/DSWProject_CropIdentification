@@ -9,6 +9,11 @@ import os
 import math
 from tqdm import tqdm
 import numpy as np
+import os
+import rasterio
+from rasterio.features import rasterize
+import geopandas as gpd
+from shapely.geometry import box
 
 from dateutil.relativedelta import relativedelta
 
@@ -161,12 +166,6 @@ def export_tiff(image_collection,Geometry_data_collect,export_folder,export_maxP
         task.start()
         print(f"Export started for image {i+1}/{n}, date : {date_str}")
 
-
-        import os
-import rasterio
-from rasterio.features import rasterize
-import geopandas as gpd
-from shapely.geometry import box
 
 def rasterize_labels_per_zone(
     base_dir,

@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from CNN_Model import CropTypeClassifier  
-from data import get_dataloaders_from_h5
+from data import get_dataset_splits_from_h5
+from torch.utils.data import DataLoader, Subset
 
 
 def evaluate(model, dataloader, device, num_classes):
@@ -71,12 +72,11 @@ def evaluate(model, dataloader, device, num_classes):
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Load dataset
-    _, val_loader = get_dataloaders_from_h5('data/Dataset.h5', batch_size=8)
-
-    num_classes = 26  # Let's use the 26 global classes we previously define
-    model = CropTypeClassifier(num_classes=num_classes)
+    
+    # Charger le dataset validation (adapte selon ta fonction)
+    _, test_loader = get_dataset_splits_from_h5('data/Dataset.h5', batch_size=8)
+    
+    model = CropTypeClassifier(num_classes=26)
     model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
     model.to(device)
 

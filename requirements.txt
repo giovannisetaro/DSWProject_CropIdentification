@@ -10,3 +10,7 @@ numpy
 tqdm
 argparse
 pandas
+scipy
+joblib
+scikit-learn
+scikit-image

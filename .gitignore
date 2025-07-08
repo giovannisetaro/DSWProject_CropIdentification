@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# --- Environnements virtuels ---
+# --- Virtual environments ---
 .env
 .venv/
 venv/
@@ -13,23 +13,23 @@ venv/
 # --- Jupyter ---
 .ipynb_checkpoints/
 
-# --- Fichiers système ---
+# --- System files ---
 .DS_Store
 Thumbs.db
 
-# --- Logs et fichiers temporaires ---
+# --- Logs and temporary files ---
 *.log
 *.out
 *.bak
 
-# --- Données (à adapter selon tes besoins) ---
+# --- Data files  ---
 /data/
 data/
 *.tif
 *.h5
-*.gpkg  # si tu veux aussi ignorer les fichiers geopackage (optionnel)
+*.gpkg  # if you also want to ignore geopackage files (optional)
 
-# --- Sorties de modèle ou de cluster ---
+# --- Model or clustering outputs ---
 /outputs/
 *.ckpt
 *.pth
