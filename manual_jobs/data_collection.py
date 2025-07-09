@@ -54,7 +54,19 @@ def create_gee_geometries(coords_list, side_km=10):
     return geometries
 
 
+from shapely.geometry import Polygon
 
+def save_ee_geometry(gee_geom_list, output_path):
+    shapely_polygons = []
+    for gee_geom in gee_geom_list:
+        geojson_dict = gee_geom.getInfo()
+        coords = geojson_dict['coordinates']
+        polygon = Polygon(coords[0])  # Use the outer ring coords
+        shapely_polygons.append(polygon)
+
+    gdf = gpd.GeoDataFrame(geometry=shapely_polygons)
+    gdf.to_file(f"{output_path}")
+    print(f"✅ Geometries exported to '{output_path}")
 
 
 

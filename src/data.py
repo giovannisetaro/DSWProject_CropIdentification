@@ -3,8 +3,8 @@ import torch
 import sklearn
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset,Subset, DataLoader, random_split
-
 from collections import Counter
+import os
 
 def safe_stratify(labels):
     counts = Counter(labels)
@@ -116,28 +116,33 @@ def get_dataset_3splits(
     )
 
     # === Step 2: compute majority class for trainval only ===
-    majority_classes = []
+    majority_classes_dict = {}  # clé = index, valeur = classe majoritaire
+    majority_classes =[]
+
     for idx in trainval_idx:
         _, y = dataset[idx]
-        mode = torch.mode(y.flatten())[0].item()
+        y_flat = y.flatten()
+        y_nonzero = y_flat[y_flat != 0]
+        if len(y_nonzero) > 0:
+            mode = torch.mode(y_nonzero)[0].item()
+        else:
+            mode = 0
         majority_classes.append(mode)
+        majority_classes_dict[idx] = mode
 
     # === Step 3: Remove rare classes from trainval ===
-    from collections import Counter
-    counts = Counter(majority_classes)
-    rare_classes = {cls for cls, count in counts.items() if count < 2}
-    if rare_classes:
-        print(f"❌ Suppression des classes rares dans train/val : {rare_classes}")
 
-    # Filtrage des indices valides
+    rare_classes = {cls for cls, count in Counter(majority_classes).items() if count < 2}
+    rare_classes.add(0)
+
     trainval_idx_filtered = [
         idx for idx in trainval_idx
-        if torch.mode(dataset[idx][1].flatten())[0].item() not in rare_classes
+        if majority_classes_dict[idx] not in rare_classes
     ]
+
     majority_classes_filtered = [
-        torch.mode(dataset[idx][1].flatten())[0].item()
-        for idx in trainval_idx_filtered
-]
+        majority_classes_dict[idx] for idx in trainval_idx_filtered
+    ]
 
     # === Step 4: final train/val split with safe stratification ===
     train_idx, val_idx = train_test_split(
@@ -160,3 +165,4 @@ def get_dataset_3splits(
     test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
     return train_loader, val_loader, test_loader
+
