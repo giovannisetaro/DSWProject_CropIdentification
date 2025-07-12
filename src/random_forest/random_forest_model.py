@@ -3,6 +3,7 @@ from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
+from src.eval import evaluate
 
 # Load datasets
 train_data = np.load("data/train_pixelwise.npz")
@@ -74,10 +75,15 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
 
     # Validate and compute accuracy
     y_va_pred = clf.predict(X_va)
-    acc = accuracy_score(y_va, y_va_pred)
-    fold_accuracies.append(acc)
+    print(f"\n[Fold {fold+1}] Evaluation:")
+    _ , metrics = evaluate(
+        y_true=y_va,
+        y_pred=y_va_pred,
+        num_classes=num_classes,
+        plot_cm=False
+    )
+    fold_accuracies.append(metrics["accuracy"])
 
-    print(f"Fold {fold+1} accuracy: {acc:.4f}")
 
 # Print average accuracy across folds
 print(f"Mean CV accuracy: {np.mean(fold_accuracies):.4f}")
@@ -97,5 +103,10 @@ final_clf.fit(X_train_val, y_train_val)
 
 # Test final model on test set
 y_test_pred = final_clf.predict(X_test)
-acc_test = accuracy_score(y_test, y_test_pred)
-print(f"Test accuracy: {acc_test:.4f}")
+print("\n[Final Test Evaluation]")
+_, metrics_test = evaluate(
+    y_true=y_test,
+    y_pred=y_test_pred,
+    num_classes=num_classes,
+    plot_cm=True
+)
