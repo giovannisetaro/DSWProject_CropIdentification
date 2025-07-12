@@ -9,7 +9,7 @@ import numpy as np
 from xgboost import XGBClassifier
 
 
-def plot_confusion_matrix(cm):
+def plot_confusion_matrix(cm): # Still required : organised label following paper example.
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm.numpy(), annot=True, fmt='d', cmap='Blues')
     plt.xlabel("Predicted label")
