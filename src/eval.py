@@ -1,161 +1,126 @@
 import torch
-import torch.nn as nn
-from src.CNN.CNN_Model import CropTypeClassifier  
-from src.data import get_dataset_3splits
-from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix as sk_confusion_matrix
 import seaborn as sns
-import numpy as np
-from xgboost import XGBClassifier
 
+def plot_confusion_matrix(cm, class_names=None, figsize=(8, 6)):
+    """
+    Plots the confusion matrix `cm` (torch.Tensor or ndarray).
+    class_names: list of class names (optional).
+    """
+    # Convert to numpy if necessary
+    if isinstance(cm, torch.Tensor):
+        cm = cm.cpu().numpy()
 
-def plot_confusion_matrix(cm): # Still required : organised label following paper example.
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(cm.numpy(), annot=True, fmt='d', cmap='Blues')
-    plt.xlabel("Predicted label")
+    plt.figure(figsize=figsize)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=class_names, yticklabels=class_names)
     plt.ylabel("True label")
-    plt.title("Confusion Matrix (pixel-wise)")
+    plt.xlabel("Predicted label")
+    plt.title("Confusion Matrix")
     plt.tight_layout()
     plt.show()
 
 
-def compute_metrics_from_CM(confusion_matrix, total_pixels, total_loss, data_length):
+def compute_metrics_from_CM(confusion_matrix, total_loss=0.0, data_length=None):
+    """
+    From a confusion_matrix torch.Tensor [C, C], computes and displays:
+      - average loss (if total_loss and data_length are provided)
+      - global accuracy
+      - precision, recall, macro F1-score
+    Returns a dictionary of metrics.
+    """
+    # Ensure compatibility: convert to long Tensor if needed
+    if not isinstance(confusion_matrix, torch.Tensor):
+        confusion_matrix = torch.tensor(confusion_matrix, dtype=torch.long)
+    cm = confusion_matrix
 
-    # Compute global accuracy
-    correct = confusion_matrix.diag().sum().item()
+    # Totals
+    total_pixels = cm.sum().item()
+    if data_length is None:
+        data_length = total_pixels
+
+    # Accuracy
+    correct = cm.diag().sum().item()
     accuracy = correct / total_pixels
 
-    # Compute per-class precision, recall, F1
-    # Here, TP, FP and FN are list
-    TP = confusion_matrix.diag().float()
+    # True positives, false positives, false negatives
+    TP = cm.diag().float()
+    FP = cm.sum(dim=0).float() - TP
+    FN = cm.sum(dim=1).float() - TP
+    eps = 1e-12
 
-    # Since rows = true classes and cols = predicted classes,
-    # sum it and remove TP cell of the confusion matrix
-    FP = confusion_matrix.sum(dim=0).float() - TP
-    FN = confusion_matrix.sum(dim=1).float() - TP
+    precision = TP / (TP + FP + eps)
+    recall    = TP / (TP + FN + eps)
+    f1        = 2 * (precision * recall) / (precision + recall + eps)
 
-    epsilon = 1e-12 # Easiest way to avoid 0 div
-    precision = TP / (TP + FP + epsilon)
-    recall = TP / (TP + FN + epsilon)
-    f1 = 2 * (precision * recall) / (precision + recall + epsilon)
-
-    # Macro-averaged metrics
+    # Macro averages
     precision_macro = precision.mean().item()
-    recall_macro = recall.mean().item()
-    f1_macro = f1.mean().item()
-    avg_loss = total_loss / data_length
+    recall_macro    = recall.mean().item()
+    f1_macro        = f1.mean().item()
 
-    # Display metrics
-    print(f"Validation Loss: {avg_loss:.4f}")
-    print(f"Validation Pixel Accuracy: {accuracy:.4f}")
-    print(f"Macro Precision: {precision_macro:.4f}")
-    print(f"Macro Recall: {recall_macro:.4f}")
-    print(f"Macro F1-score: {f1_macro:.4f}")
+    # Average loss if requested
+    avg_loss = (total_loss / data_length) if data_length > 0 else None
 
-    plot_confusion_matrix(confusion_matrix)
+    # Display
+    if avg_loss is not None:
+        print(f"Average Loss       : {avg_loss:.4f}")
+    print(f"Global Accuracy    : {accuracy:.4f}")
+    print(f"Macro Precision    : {precision_macro:.4f}")
+    print(f"Macro Recall       : {recall_macro:.4f}")
+    print(f"Macro F1-score     : {f1_macro:.4f}")
 
-    # Return metrics in a dict, may be uses later on
     return {
-    'loss': avg_loss,
-    'accuracy': accuracy,
-    'precision_macro': precision_macro,
-    'recall_macro': recall_macro,
-    'f1_macro': f1_macro,
+        'loss'            : avg_loss,
+        'accuracy'        : accuracy,
+        'precision_macro' : precision_macro,
+        'recall_macro'    : recall_macro,
+        'f1_macro'        : f1_macro,
     }
 
 
-def evaluate_cnn(model, dataloader, device, num_classes):
-    model.eval()
-    total_correct = 0
-    criterion = nn.CrossEntropyLoss()
+def evaluate(y_true, y_pred, num_classes=None, class_names=None,
+             total_loss=0.0, data_length=None, plot_cm=True):
+    """
+    Generic evaluation function: takes y_true and y_pred (list, np.ndarray, or torch.Tensor),
+    reconstructs the confusion matrix, then computes and displays metrics.
 
-    # Confusion matrix (rows = true classes, cols = predicted classes)
-    confusion_matrix = torch.zeros(num_classes, num_classes).long()
+    Arguments:
+      - y_true, y_pred : flat integer vectors [0..C-1]
+      - num_classes    : number of classes (if None, determined automatically)
+      - class_names    : class names for CM display
+      - total_loss     : (optional) total loss if computed
+      - data_length    : (optional) dataset size for average loss
+      - plot_cm        : True to display the confusion matrix
 
-    total_loss = 0.0
-    total_pixels = 0
+    Returns:
+      - cm       : torch.Tensor [C, C]
+      - metrics  : dictionary of metrics (see compute_metrics_from_CM)
+    """
+    # Convert to numpy
+    import numpy as np
+    y_true = np.array(y_true).ravel()
+    y_pred = np.array(y_pred).ravel()
 
-    with torch.no_grad():
-        # Loop on every single batch (batch size = 8)
-        for x, y in dataloader:
-            # x = input [Batch size, Bands, temporal step, H, W]
-            # y = real classes [Batch size, H, W] 
-            x, y = x.to(device), y.to(device)
+    # Determine num_classes
+    if num_classes is None:
+        num_classes = max(y_true.max(), y_pred.max()) + 1
 
-            # Retrive the logit [Batch size, number of classes, H, W]
-            outputs = model(x)
+    # 1) Build confusion matrix using sklearn
+    cm_np = sk_confusion_matrix(
+        y_true, y_pred,
+        labels=list(range(num_classes))
+    )
 
-            loss = criterion(outputs, y)
-            
-            # Compute total_loss by multiplying loss by batch size,
-            # will be useful to compute the average later on
-            total_loss += loss.item() * x.size(0)
+    # 2) Convert to torch.Tensor
+    import torch
+    cm = torch.tensor(cm_np, dtype=torch.long)
 
-            # Prediction is the highest probability class
-            preds = outputs.argmax(dim=1)
+    # 3) Plot if requested
+    if plot_cm:
+        plot_confusion_matrix(cm, class_names=class_names)
 
-            # Flatten for confusion matrix to enable comparison
-            preds_flat = preds.view(-1)
-            labels_flat = y.view(-1)
+    # 4) Compute metrics
+    metrics = compute_metrics_from_CM(cm, total_loss=total_loss, data_length=data_length)
 
-            # Update confusion matrix
-            for true, predict in zip(labels_flat, preds_flat):
-                confusion_matrix[true.long(), predict.long()] += 1
-
-            total_pixels += labels_flat.numel()
-
-    return confusion_matrix, total_pixels, total_loss, len(dataloader.dataset)
-
-
-def evaluate_xgb(y_preds, dataloader, num_classes):
-    # Initialize confusion matrix
-    confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
-    total_pixels = 0
-    all_preds = []
-    all_labels = []
-
-    idx = 0  # pour itérer dans les prédictions plates
-
-    for _, y in dataloader:
-        batch_size, H, W = y.shape
-        n_pixels = batch_size * H * W
-
-        # Flatten labels
-        y_flat = y.view(-1)
-
-        # Slice the corresponding predicted labels (déjà plats)
-        preds_flat = torch.tensor(y_preds[idx:idx + n_pixels])
-        idx += n_pixels
-
-        all_preds.append(preds_flat)
-        all_labels.append(y_flat)
-
-        for true, pred in zip(y_flat, preds_flat):
-            confusion_matrix[true.long(), pred.long()] += 1
-
-        total_pixels += y_flat.numel()
-
-    return confusion_matrix, total_pixels, total_loss, len(dataloader.dataset)
-
-
-def main():
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Load cnn test dataset
-    _, _, test_loader_cnn = get_dataset_3splits('data/Dataset.h5', dataset_type="cnn", batch_size=8)
-    
-    model = CropTypeClassifier(num_classes=26)
-    model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
-    model.to(device)
-
-    metrics_cnn = compute_metrics_from_CM(evaluate_cnn(model, test_loader_cnn, device, num_classes=26))
-
-
-    # Load rf test dataset
-    _, _, test_loader_fr = get_dataset_3splits('data/Dataset.h5', dataset_type="rf", batch_size=8)
-
-    
-
-
-if __name__ == "__main__":
-    main()
+    return cm, metrics
