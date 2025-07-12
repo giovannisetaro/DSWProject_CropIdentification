@@ -35,29 +35,23 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=2
     total_samples = 0
 
     with torch.no_grad():
-        # Loop on every single batch (batch size = 8)
         for x, y in dataloader:
-            # x = input [Batch size, Bands, temporal step, H, W]
-            # y = real classes [Batch size, H, W] 
             x, y = x.to(device), y.to(device)
-
-            # Retrive the logit [Batch size, number of classes, H, W]
             outputs = model(x)
-
             loss = criterion(outputs, y)
 
-            # Compute total_loss by multiplying loss by batch size,
-            # will be useful to compute the average later on
             total_loss += loss.item() * x.size(0)
             total_samples += x.size(0)
 
-            # Prediction is the highest probability class
             preds = outputs.argmax(dim=1)
 
-            # Flatten for confusion matrix
-            # Flatten for confusion matrix to enable comparison
-            y_pred = preds.view(-1)
-            y_true = y.view(-1)
+            # Flatten and accumulate predictions
+            y_true.append(y.view(-1).cpu())
+            y_pred.append(preds.view(-1).cpu())
+
+    # Concatenate all predictions
+    y_true = torch.cat(y_true).numpy()
+    y_pred = torch.cat(y_pred).numpy()
 
     _, metrics = evaluate(
         y_true=y_true,
@@ -79,13 +73,14 @@ def main():
 
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    learning_rates = [1e-3, 5e-4]
-    batch_sizes = [128, 256]
-    num_epochs = 1
+    learning_rates = [1e-3, 5e-4, 1e-4]
+    batch_sizes = [64, 128, 256]
+    num_epochs_list = [10, 20, 30]
     patience = 3
     min_delta = 1e-4
 
-    for lr, batch_size in itertools.product(learning_rates, batch_sizes):
+    for lr, batch_size, num_epochs in itertools.product(learning_rates, batch_sizes, num_epochs_list):
+
         print(f"\n[HPO] lr={lr}, batch_size={batch_size}")
 
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
