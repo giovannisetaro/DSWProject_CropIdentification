@@ -10,6 +10,22 @@ We use the Registre Parcellaire Graphique (RPG) 2023 as the reference for crop t
 - ([online visualisation](https://www.geoportail.gouv.fr/donnees/registre-parcellaire-graphique-rpg-2023))
 - ([downloading link](https://data.geopf.fr/telechargement/download/RPG/RPG_2-2__GPKG_LAMB93_FXX_2023-01-01/RPG_2-2__GPKG_LAMB93_FXX_2023-01-01.7z))
 
+# This table lists key agricultural zones across France, paired with nearby towns for geographic reference. 
+# Each zone represents distinct agricultural landscapes characterized by dominant crops and farming practices due to various pedoclimatic context.
+
+
+| Zone                            | Region                 | Nearby Town (Map Reference) | Notes                                                         |
+| ------------------------------- | ---------------------- | --------------------------- | ------------------------------------------------------------- |
+| **Nord-Picardie**               | Hauts-de-France        | **Saint-Quentin** (Aisne)   | Surrounded by large-scale crops (wheat, sugar beet, potatoes) |
+| **Paris Basin**                 | Île-de-France / Centre | **Chartres** (Eure-et-Loir) | Heart of the Beauce, vast cereal plains                       |
+| **Brittany / Pays de la Loire** | Brittany / Vendée      | **Vitré** (Ille-et-Vilaine) | Mixed zone: livestock, silage maize, hedgerows                |
+| **Southwest**                   | Nouvelle-Aquitaine     | **Auch** (Gers)             | Cereal polyculture, maize, sunflower                          |
+| **Southeast**                   | Provence, Rhône-Alpes  | **Carpentras** (Vaucluse)   | Vineyards, orchards, greenhouse vegetable farming             |
+| **Massif Central**              | Auvergne               | **Riom** (Puy-de-Dôme)      | Limagne plain: polyculture on volcanic plains                 |
+| **Alsace  / Lorraine**           | Grand Est              | **Colmar** (Haut-Rhin)      | Hillside vineyards + lowland crop farming                     |
+| **Mediterranean**               | Occitanie, PACA        | **Béziers** (Hérault)       | Vineyards, olive trees, vegetable crops, dry climate          |
+
+We use ESA WorldCover (10 m resolution, global) to identify highly cultivated areas for sampling. Class 40 in this dataset represents "Cropland," allowing precise detection of agricultural zones in 2020 and 2021. we select 5 zones around each of those representatives landscapes
 
 ### Satellite Data
 We rely on Sentinel-2 Level-2A (Surface Reflectance) images: [Harmonized Sentinel-2 MSI: MultiSpectral Instrument, Level-2A (SR)](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED?hl=fr)
