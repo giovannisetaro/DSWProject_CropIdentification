@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from CNN_Model import CropTypeClassifier  
-from data import get_dataset_splits_from_h5
+from src.CNN.CNN_Model import CropTypeClassifier  
+from src.data import get_dataset_3splits
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -20,10 +20,12 @@ def plot_confusion_matrix(cm):
 
 def evaluate(model, dataloader, device, num_classes):
     model.eval()
+    total_correct = 0
     criterion = nn.CrossEntropyLoss()
 
     # Confusion matrix (rows = true classes, cols = predicted classes)
-    confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    confusion_matrix = torch.zeros(num_classes, num_classes).long()
+
     total_loss = 0.0
     total_pixels = 0
 
@@ -103,7 +105,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Charger le dataset validation (adapte selon ta fonction)
-    _, test_loader = get_dataset_splits_from_h5('data/Dataset.h5', batch_size=8)
+    _, _, test_loader = get_dataset_3splits('data/Dataset.h5', val_ratio=0.15, test_ratio=0.15)
     
     model = CropTypeClassifier(num_classes=26)
     model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
