@@ -183,3 +183,30 @@ if __name__ == "__main__":
     x = torch.randn(B, C, T, H, W)
     output = model(x)
     print(output.shape)  # doit afficher : torch.Size([2, 5, 24, 24])
+
+
+# | Hyperparamètre          | Valeur actuelle | Rôle / Impact                                                                                                                          |
+# | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+# | `in_channels`           | `4`             | Nombre de bandes spectrales                                                                                                            |
+# | `out_channels`          | `64`            | ⚠️ Dim. de l'embedding temporel + profondeur des filtres (↗️ = meilleure représentation, plus de calcul)                               |
+# | `kernel_size`           | `3`             | Taille du filtre temporel (ex: 3 mois glissants). Contrôle la capacité du modèle à capturer des motifs temporels                       |
+# | `nb_layers` (implicite) | `2` couches     | Le fait d'empiler 2 convolutions augmente le **receptive field temporel** (capacité à capter des phénomènes lents comme la croissance) |
+# | **Pooling**             | `max`           | Choix entre `mean`, `max`, ou attention. Ici, `max` = sensible aux événements courts (pic NDVI, floraison)                             |
+
+# | Hyperparamètre        | Valeur actuelle  | Rôle / Impact                                                                                        |
+# | --------------------- | ---------------- | ---------------------------------------------------------------------------------------------------- |
+# | `DoubleConv` channels | `[64, 128, 256]` | Nombre de canaux par niveau de la UNet. Contrôle la **profondeur du traitement spatial**             |
+# | `Kernel_size conv2d`  | `3`              | Taille du voisinage spatial considéré (3×3 pixels = 30m×30m)                                         |
+# | `Up/Down scaling`     | `/2`             | Factor d’échelle entre chaque niveau. Plus tu descends, plus tu captes du contexte large             |
+# | `UNet depth`          | 2 niveaux        | Profondeur totale de l’UNet, impacte la capacité à capter des **structures spatiales hiérarchiques** |
+# | `Dropout`             | ❌ (absent)       | Tu peux en ajouter pour régulariser si overfit                                                       |
+# | `activation`          | `ReLU`           | Fonction d’activation standard                                                                       |
+
+# | Hyperparamètre          | Valeur actuelle  | Description                                       |
+# | ----------------------- | ---------------- | ------------------------------------------------- |
+# | `temporal_out_channels` | `64`             | Correspond à l’`out_channels` du temporal CNN     |
+# | `num_classes`           | `25`             | ⚠️ À adapter à tes données                        |
+# | `loss ignore_index`     | recommandé `0`   | Pour ignorer la classe "non culture" dans la loss |
+# | `optimizer`             | ❌ non défini ici | SGD ? Adam ? learning rate ?                      |
+# | `learning rate`         | ❌ à définir      | Important à ajuster (ex: `1e-3`, `1e-4`)          |
+# | `weight decay`          | ❌ à ajouter      | Pour régularisation L2 si besoin                  |
