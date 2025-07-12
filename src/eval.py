@@ -21,12 +21,11 @@ def plot_confusion_matrix(cm):
 def evaluate(model, dataloader, device, num_classes):
     model.eval()
     total_correct = 0
-    total_pixels = 0
-    total_loss = 0
     criterion = nn.CrossEntropyLoss()
 
     # Confusion matrix (rows = true classes, cols = predicted classes)
-    confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    confusion_matrix = torch.zeros(num_classes, num_classes).long()
+
     total_loss = 0.0
     total_pixels = 0
 

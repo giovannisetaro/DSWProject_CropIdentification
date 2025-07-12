@@ -9,6 +9,7 @@ import os
 from tqdm import tqdm
 from src.eval import evaluate
 import itertools
+from torch.utils.data import ConcatDataset
 
 def train_loop(model, dataloader, optimizer, criterion, device):
     model.train()
@@ -31,7 +32,9 @@ def main():
 
 
     # Load the dataset and split off the test set
-    train_val_dataset, _ , _ = get_dataset_3splits("data/Dataset.h5",val_ratio = 0.15, test_ratio=0.15) 
+    train_dataset, val_dataset , _ = get_dataset_3splits("data/Dataset.h5",val_ratio = 0.15, test_ratio=0.15) 
+
+    train_val_dataset = ConcatDataset([train_dataset, val_dataset])
 
     # Set up K-Fold Cross Validation (5 folds)
     kf = KFold(n_splits=5, shuffle=True, random_state=42)  
@@ -70,7 +73,9 @@ def main():
 
             for epoch in range(1, num_epochs + 1):
                 train_loss = train_loop(model, train_loader, optimizer, criterion, device)
-                val_loss, val_acc = evaluate(model, val_loader, criterion, device)
+                metrics = evaluate(model, val_loader, device=device, num_classes=26)
+                val_loss = metrics['loss']
+                val_acc = metrics['accuracy']
 
                 print(f"[Fold {fold+1} | Epoch {epoch}/{num_epochs}] "
                       f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
@@ -80,10 +85,14 @@ def main():
                     best_val_loss = val_loss
                     best_epoch = epoch
                     early_stop_counter = 0
-                    best_model_path = (
-                        f"checkpoints/best_model_fold{fold+1}_lr{lr}_bs{batch_size}_ne{num_epochs}_pat{patience}.pth"
-                    )
+                    # Create subdirectory for current HPO combination
+                    subdir = f"checkpoints/lr_{lr}_bs_{batch_size}_ne_{num_epochs}_pat_{patience}"
+                    os.makedirs(subdir, exist_ok=True)
+
+                    # Create full path for current fold
+                    best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
                     torch.save(model.state_dict(), best_model_path)
+
                 else:
                     early_stop_counter += 1
                     print(f"No improvement. Early stop counter: {early_stop_counter}/{patience}")

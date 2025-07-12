@@ -160,9 +160,13 @@ def get_dataset_3splits(
     collate_fn = tabular_collate_fn if dataset_type == "rf" else None
 
     # --- Create data loaders ---
-    train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    # train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    # val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    # test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
-    return train_loader, val_loader, test_loader
+    train_set = Subset(dataset, train_idx)
+    val_set = Subset(dataset, val_idx)
+    test_set = Subset(dataset, test_idx)
+
+    return train_set, val_set, test_set
 
