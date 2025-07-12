@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from CNN_Model import CropTypeClassifier  
+from CNN.CNN_Model import CropTypeClassifier  
 from data import get_dataset_splits_from_h5
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt

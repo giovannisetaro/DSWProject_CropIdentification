@@ -10,7 +10,7 @@ def safe_stratify(labels):
     counts = Counter(labels)
     rare_classes = [cls for cls, count in counts.items() if count < 2]
     if rare_classes:
-        print(f"⚠️ Stratification désactivée. Classes trop rares : {rare_classes}")
+        print(f" Stratification désactivée. Classes trop rares : {rare_classes}")
         return None, rare_classes
     return labels, []
     
