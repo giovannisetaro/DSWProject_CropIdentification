@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 from data import get_dataset_splits_from_h5
-from CNN_Model import CropTypeClassifier
+from CNN.CNN_Model import CropTypeClassifier
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import KFold
 import os
