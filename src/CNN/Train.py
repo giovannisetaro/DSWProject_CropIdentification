@@ -27,6 +27,37 @@ def train_loop(model, dataloader, optimizer, criterion, device):
     return total_loss / len(dataloader)
 
 
+def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=26, class_names=None, plot_cm=False):
+    model.eval()
+    y_true = []
+    y_pred = []
+    total_loss = 0.0
+    total_samples = 0
+
+    with torch.no_grad():
+        for x, y in dataloader:
+            x, y = x.to(device), y.to(device)
+            outputs = model(x)
+            loss = criterion(outputs, y)
+            total_loss += loss.item() * x.size(0)
+            total_samples += x.size(0)
+
+            preds = torch.argmax(outputs, dim=1)
+            y_true.extend(y.cpu().numpy())
+            y_pred.extend(preds.cpu().numpy())
+
+    _, metrics = evaluate(
+        y_true=y_true,
+        y_pred=y_pred,
+        num_classes=num_classes,
+        class_names=class_names,
+        total_loss=total_loss,
+        data_length=total_samples,
+        plot_cm=plot_cm
+    )
+
+    return metrics
+
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -64,7 +95,7 @@ def main():
 
             for epoch in range(1, num_epochs + 1):
                 train_loss = train_loop(model, train_loader, optimizer, criterion, device)
-                metrics = evaluate(model, val_loader, device=device, num_classes=26)
+                metrics = evaluate_model_on_loader(model, val_loader, device, criterion, num_classes=26)
                 val_loss = metrics['loss']
                 val_acc = metrics['accuracy']
 
