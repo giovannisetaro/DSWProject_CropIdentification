@@ -1,49 +1,101 @@
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
-from src.data import get_dataset_splits_from_h5
 
-# Load tabular features and labels extracted earlier
-data = np.load("data/tabular_pixelwise_data.npz")
-X_tabular = data["X"]  # shape: [num_samples, features_dim]
-y_tabular = data["y"]  # shape: [num_samples]
+# Load datasets
+train_data = np.load("data/train_pixelwise.npz")
+val_data = np.load("data/val_pixelwise.npz")
+test_data = np.load("data/test_pixelwise.npz")
 
-# Use your existing function to split dataset into train+val and test subsets
-train_val_dataset, test_dataset = get_dataset_splits_from_h5("data/Dataset.h5", test_ratio=0.2)
+X_train, y_train = train_data["X"], train_data["y"].astype(int)
+X_val, y_val = val_data["X"], val_data["y"].astype(int)
+X_test, y_test = test_data["X"], test_data["y"].astype(int)
 
-# Get indices corresponding to train+val and test sets
-train_val_indices = train_val_dataset.indices
-test_indices = test_dataset.indices
+# Combine train and val for cross-validation
+X_train_val = np.concatenate([X_train, X_val], axis=0)
+y_train_val = np.concatenate([y_train, y_val], axis=0)
 
-# Initialize K-Fold cross-validation on train+val set indices
+print("Train+Val shape:", X_train_val.shape, y_train_val.shape)
+
+# === REMAP CLASSES TO CONSECUTIVE INTEGERS ===
+all_classes = np.unique(y_train_val)
+print("Original classes:", all_classes)
+
+# Create mapping original_label -> consecutive_label
+class_map = {old_label: new_label for new_label, old_label in enumerate(all_classes)}
+
+def map_labels(y, mapping):
+    y_mapped = np.copy(y)
+    for old_label, new_label in mapping.items():
+        y_mapped[y == old_label] = new_label
+    return y_mapped
+
+# Apply remapping to train+val and test labels
+y_train_val = map_labels(y_train_val, class_map)
+y_test = map_labels(y_test, class_map)
+
+num_classes = len(all_classes)
+print(f"Remapped classes: {np.unique(y_train_val)}")
+print(f"Number of classes: {num_classes}")
+
+# Normalize data (fit scaler only on train+val)
+scaler = StandardScaler()
+X_train_val = scaler.fit_transform(X_train_val)
+X_test = scaler.transform(X_test)
+
+# Set up 5-fold cross-validation
 kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_indices)):
-    print(f"Fold {fold + 1}")
+fold_accuracies = []
 
-    # Map fold indices to global dataset indices
-    train_global_idx = np.array(train_val_indices)[train_idx]
-    val_global_idx = np.array(train_val_indices)[val_idx]
+print("Starting KFold cross-validation with XGBoost...")
 
-    # Extract feature vectors and labels for train and validation fold subsets
-    X_train_fold = X_tabular[train_global_idx]
-    y_train_fold = y_tabular[train_global_idx]
-    X_val_fold = X_tabular[val_global_idx]
-    y_val_fold = y_tabular[val_global_idx]
+for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
+    # Split fold data
+    X_tr, X_va = X_train_val[train_idx], X_train_val[val_idx]
+    y_tr, y_va = y_train_val[train_idx], y_train_val[val_idx]
 
-    # Initialize and train Random Forest classifier
-    clf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    clf.fit(X_train_fold, y_train_fold)
+    # Create XGBoost model with fixed params
+    clf = XGBClassifier(
+        device ='cuda',
+        tree_method='gpu_hist',
+        eval_metric='mlogloss',
+        num_class=num_classes,
+        n_estimators=100,
+        max_depth=10,
+        random_state=42,
+        n_jobs=-1
+    )
 
-    # Predict on validation fold and compute accuracy
-    y_val_pred = clf.predict(X_val_fold)
-    acc_val = accuracy_score(y_val_fold, y_val_pred)
-    print(f"Validation Accuracy Fold {fold + 1}: {acc_val:.4f}")
+    # Train model
+    clf.fit(X_tr, y_tr)
 
-# After cross-validation, evaluate on the test set
-X_test = X_tabular[test_indices]
-y_test = y_tabular[test_indices]
-y_test_pred = clf.predict(X_test)
+    # Validate and compute accuracy
+    y_va_pred = clf.predict(X_va)
+    acc = accuracy_score(y_va, y_va_pred)
+    fold_accuracies.append(acc)
+
+    print(f"Fold {fold+1} accuracy: {acc:.4f}")
+
+# Print average accuracy across folds
+print(f"Mean CV accuracy: {np.mean(fold_accuracies):.4f}")
+
+# Train final model on full train+val set
+final_clf = XGBClassifier(
+    device ='cuda',
+    tree_method='gpu_hist',
+    eval_metric='mlogloss',
+    num_class=num_classes,
+    n_estimators=100,
+    max_depth=10,
+    random_state=42,
+    n_jobs=-1
+)
+final_clf.fit(X_train_val, y_train_val)
+
+# Test final model on test set
+y_test_pred = final_clf.predict(X_test)
 acc_test = accuracy_score(y_test, y_test_pred)
-print(f"Test Accuracy: {acc_test:.4f}")
+print(f"Test accuracy: {acc_test:.4f}")

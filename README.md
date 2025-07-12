@@ -26,6 +26,7 @@ We leverages 4 spectral bands from Sentinel-2 satellites to perform crop detecti
 | B4   | Red   | 10 m       | 664.5 / 665 nm         | NDVI calculation, vegetation growth tracking        |
 | B8   | NIR   | 10 m       | 835.1 / 833 nm         | Biomass detection, distinguishes soil vs vegetation |
 
+![Demo du projet](.plots/gif/zone3_B2.gif)
 
 # Models 
 
