@@ -19,22 +19,27 @@ def flatten_samples(X, Y):
     return X_flat, y_flat
 
 def main():
-    # 1. Load dataset
-    with h5py.File("data/Dataset.h5", 'r') as hf:
-        X = torch.tensor(hf['data'][:])        # [N, T, C, H, W]
-        Y = torch.tensor(hf['labels'][:])      # [N, H, W]
+    # 1. Load dataset train+val
+    with h5py.File("data/dataset_val_train.h5", 'r') as hf:
+        X_valtrain = torch.tensor(hf['data'][:])        # [N, T, C, H, W]
+        Y_valtrain = torch.tensor(hf['labels'][:])      # [N, H, W]
 
-    N = X.shape[0]
+    # 2. Load test dataset
+    with h5py.File("data/dataset_test.h5", 'r') as hf:
+        X_test = torch.tensor(hf['data'][:])
+        Y_test = torch.tensor(hf['labels'][:])
+
+    N = X_valtrain.shape[0]
     all_indices = list(range(N))
-    
-    # 2. Build a mapping from class -> list of samples that contain that class
+
+    # 3. Build mapping class -> samples for val+train
     class_to_samples = defaultdict(set)
     for i in range(N):
-        unique_classes = torch.unique(Y[i])
+        unique_classes = torch.unique(Y_valtrain[i])
         for cls in unique_classes:
             class_to_samples[int(cls.item())].add(i)
 
-    # 3. Select the smallest subset of samples that cover all classes
+    # 4. Select minimal subset of samples covering all classes for training
     train_indices = set()
     covered_classes = set()
 
@@ -44,7 +49,7 @@ def main():
         for i in all_indices:
             if i in train_indices:
                 continue
-            sample_classes = set(torch.unique(Y[i]).tolist())
+            sample_classes = set(torch.unique(Y_valtrain[i]).tolist())
             new_classes = sample_classes - covered_classes
             if len(new_classes) > len(best_new_classes):
                 best_sample = i
@@ -52,33 +57,22 @@ def main():
         if best_sample is None:
             break
         train_indices.add(best_sample)
-        covered_classes.update(torch.unique(Y[best_sample]).tolist())
+        covered_classes.update(torch.unique(Y_valtrain[best_sample]).tolist())
 
-    # 4. Split remaining samples into validation and test sets
-    remaining_indices = [i for i in all_indices if i not in train_indices]
-    np.random.seed(42)
-    np.random.shuffle(remaining_indices)
-    half = len(remaining_indices) // 2
-    val_indices = set(remaining_indices[:half])
-    test_indices = set(remaining_indices[half:])
+    # 5. Remaining samples split into validation
+    val_indices = [i for i in all_indices if i not in train_indices]
 
-    assert len(train_indices & val_indices) == 0
-    assert len(train_indices & test_indices) == 0
-    assert len(val_indices & test_indices) == 0
+    print(f"Train samples: {len(train_indices)}")
+    print(f"Validation samples: {len(val_indices)}")
+    print(f"Test samples: {X_test.shape[0]}")
 
-    # 5. Extract the splits
-    X_train = [X[i] for i in train_indices]
-    Y_train = [Y[i] for i in train_indices]
-    X_val = [X[i] for i in val_indices]
-    Y_val = [Y[i] for i in val_indices]
-    X_test = [X[i] for i in test_indices]
-    Y_test = [Y[i] for i in test_indices]
+    # 6. Extract train and val splits
+    X_train = [X_valtrain[i] for i in train_indices]
+    Y_train = [Y_valtrain[i] for i in train_indices]
+    X_val = [X_valtrain[i] for i in val_indices]
+    Y_val = [Y_valtrain[i] for i in val_indices]
 
-    print(f"Train samples: {len(X_train)}")
-    print(f"Validation samples: {len(X_val)}")
-    print(f"Test samples: {len(X_test)}")
-
-    # 6. Flatten and save
+    # 7. Flatten and save
     X_train_flat, y_train_flat = flatten_samples(X_train, Y_train)
     X_val_flat, y_val_flat = flatten_samples(X_val, Y_val)
     X_test_flat, y_test_flat = flatten_samples(X_test, Y_test)

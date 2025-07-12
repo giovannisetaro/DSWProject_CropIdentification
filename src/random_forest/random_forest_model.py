@@ -4,6 +4,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold, GridSearchCV
 from src.eval import evaluate
+import xgboost as xgb
 
 # Load datasets
 train_data = np.load("data/train_pixelwise.npz")
@@ -77,7 +78,9 @@ print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
 
 # Evaluate on test set
 best_model = grid_search.best_estimator_
-y_test_pred = best_model.predict(X_test)
+dtest = xgb.DMatrix(X_test, device='cuda')
+y_test_pred = final_clf.predict(dtest)
+
 
 print("\n[Final Test Evaluation]")
 _, metrics_test = evaluate(
