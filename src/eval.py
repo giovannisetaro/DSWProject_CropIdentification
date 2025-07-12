@@ -150,17 +150,9 @@ def main():
 
 
     # Load rf test dataset
-    _, _, test_loader_fr = get_dataset_3splits('data/Dataset.h5', dataset_type="cnn", batch_size=8)
+    _, _, test_loader_fr = get_dataset_3splits('data/Dataset.h5', dataset_type="rf", batch_size=8)
 
-    # === Extract X_test (features) ===
-    X_test = []
-    for X_batch, _ in test_loader_fr:
-        X_test.append(X_batch.numpy())
-    X_test = np.concatenate(X_test, axis=0)
-
-    # === Load XGBoost model ===
-    xgb_model = XGBClassifier()
-    xgb_model.load_model("xgb_model.json") # Which path ??? IDK the format
+    
 
 
 if __name__ == "__main__":
