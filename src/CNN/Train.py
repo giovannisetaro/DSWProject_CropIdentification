@@ -36,7 +36,7 @@ def main():
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
     learning_rates = [1e-3, 5e-4]
-    batch_sizes = [8, 16]
+    batch_sizes = [32, 64]
     num_epochs = 10
     patience = 3
     min_delta = 1e-4
@@ -50,8 +50,21 @@ def main():
             train_subset = Subset(train_val_dataset, train_idx)
             val_subset = Subset(train_val_dataset, val_idx)
 
-            train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
-            val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+            train_loader = DataLoader(
+                train_subset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=4,
+                pin_memory=True
+            )
+            val_loader = DataLoader(
+                val_subset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=True
+            )
+
 
             model = CropTypeClassifier(num_classes=26).to(device)
             criterion = nn.CrossEntropyLoss()
