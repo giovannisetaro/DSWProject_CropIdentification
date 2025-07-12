@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from data import get_dataset_3splits
-from CNN.CNN_Model import CropTypeClassifier
+from src.data import get_dataset_3splits
+from src.CNN.CNN_Model import CropTypeClassifier
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import KFold
 import os
 from tqdm import tqdm
-from eval import evaluate
+from src.eval import evaluate
 import itertools
 
 def train_loop(model, dataloader, optimizer, criterion, device):
@@ -31,7 +31,7 @@ def main():
 
 
     # Load the dataset and split off the test set
-    train_val_dataset, _ = get_dataset_3splits("data/Dataset.h5",val_ratio = 0.15, test_ratio=0.15) 
+    train_val_dataset, _ , _ = get_dataset_3splits("data/Dataset.h5",val_ratio = 0.15, test_ratio=0.15) 
 
     # Set up K-Fold Cross Validation (5 folds)
     kf = KFold(n_splits=5, shuffle=True, random_state=42)  

@@ -16,4 +16,3 @@ scikit-learn
 scikit-image
 seaborn
 xgboost
-itertools
