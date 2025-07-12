@@ -67,8 +67,8 @@ def main():
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
     learning_rates = [1e-3, 5e-4]
-    batch_sizes = [32, 64]
-    num_epochs = 10
+    batch_sizes = [128, 256]
+    num_epochs = 1
     patience = 3
     min_delta = 1e-4
 
