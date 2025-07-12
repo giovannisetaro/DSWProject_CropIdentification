@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 from CNN_Model import CropTypeClassifier  
-from data import get_dataset_splits_from_h5
+from data import get_dataset_3splits
 from torch.utils.data import DataLoader, Subset
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+from xgboost import XGBClassifier
 
 
 def plot_confusion_matrix(cm):
@@ -18,7 +19,52 @@ def plot_confusion_matrix(cm):
     plt.show()
 
 
-def evaluate(model, dataloader, device, num_classes):
+def compute_metrics_from_CM(confusion_matrix, total_pixels, total_loss, data_length):
+
+    # Compute global accuracy
+    correct = confusion_matrix.diag().sum().item()
+    accuracy = correct / total_pixels
+
+    # Compute per-class precision, recall, F1
+    # Here, TP, FP and FN are list
+    TP = confusion_matrix.diag().float()
+
+    # Since rows = true classes and cols = predicted classes,
+    # sum it and remove TP cell of the confusion matrix
+    FP = confusion_matrix.sum(dim=0).float() - TP
+    FN = confusion_matrix.sum(dim=1).float() - TP
+
+    epsilon = 1e-12 # Easiest way to avoid 0 div
+    precision = TP / (TP + FP + epsilon)
+    recall = TP / (TP + FN + epsilon)
+    f1 = 2 * (precision * recall) / (precision + recall + epsilon)
+
+    # Macro-averaged metrics
+    precision_macro = precision.mean().item()
+    recall_macro = recall.mean().item()
+    f1_macro = f1.mean().item()
+    avg_loss = total_loss / data_length
+
+    # Display metrics
+    print(f"Validation Loss: {avg_loss:.4f}")
+    print(f"Validation Pixel Accuracy: {accuracy:.4f}")
+    print(f"Macro Precision: {precision_macro:.4f}")
+    print(f"Macro Recall: {recall_macro:.4f}")
+    print(f"Macro F1-score: {f1_macro:.4f}")
+
+    plot_confusion_matrix(confusion_matrix)
+
+    # Return metrics in a dict, may be uses later on
+    return {
+    'loss': avg_loss,
+    'accuracy': accuracy,
+    'precision_macro': precision_macro,
+    'recall_macro': recall_macro,
+    'f1_macro': f1_macro,
+    }
+
+
+def evaluate_cnn(model, dataloader, device, num_classes):
     model.eval()
     criterion = nn.CrossEntropyLoss()
 
@@ -56,60 +102,65 @@ def evaluate(model, dataloader, device, num_classes):
 
             total_pixels += labels_flat.numel()
 
-    # Compute global accuracy
-    correct = confusion_matrix.diag().sum().item()
-    accuracy = correct / total_pixels
+    return confusion_matrix, total_pixels, total_loss, len(dataloader.dataset)
 
-    # Compute per-class precision, recall, F1
-    # Here, TP, FP and FN are list
-    TP = confusion_matrix.diag().float()
 
-    # Since rows = true classes and cols = predicted classes,
-    # sum it and remove TP cell of the confusion matrix
-    FP = confusion_matrix.sum(dim=0).float() - TP
-    FN = confusion_matrix.sum(dim=1).float() - TP
+def evaluate_xgb(y_preds, dataloader, num_classes):
+    # Initialize confusion matrix
+    confusion_matrix = torch.zeros((num_classes, num_classes), dtype=torch.int64)
+    total_pixels = 0
+    all_preds = []
+    all_labels = []
 
-    epsilon = 1e-12 # Easiest way to avoid 0 div
-    precision = TP / (TP + FP + epsilon)
-    recall = TP / (TP + FN + epsilon)
-    f1 = 2 * (precision * recall) / (precision + recall + epsilon)
+    idx = 0  # pour itérer dans les prédictions plates
 
-    # Macro-averaged metrics
-    precision_macro = precision.mean().item()
-    recall_macro = recall.mean().item()
-    f1_macro = f1.mean().item()
-    avg_loss = total_loss / len(dataloader.dataset)
+    for _, y in dataloader:
+        batch_size, H, W = y.shape
+        n_pixels = batch_size * H * W
 
-    # Display metrics
-    print(f"Validation Loss: {avg_loss:.4f}")
-    print(f"Validation Pixel Accuracy: {accuracy:.4f}")
-    print(f"Macro Precision: {precision_macro:.4f}")
-    print(f"Macro Recall: {recall_macro:.4f}")
-    print(f"Macro F1-score: {f1_macro:.4f}")
+        # Flatten labels
+        y_flat = y.view(-1)
 
-    plot_confusion_matrix(confusion_matrix)
+        # Slice the corresponding predicted labels (déjà plats)
+        preds_flat = torch.tensor(y_preds[idx:idx + n_pixels])
+        idx += n_pixels
 
-    # Return metrics in a dict, may be uses later on
-    return {
-        'loss': avg_loss,
-        'accuracy': accuracy,
-        'precision_macro': precision_macro,
-        'recall_macro': recall_macro,
-        'f1_macro': f1_macro,
-    }
+        all_preds.append(preds_flat)
+        all_labels.append(y_flat)
+
+        for true, pred in zip(y_flat, preds_flat):
+            confusion_matrix[true.long(), pred.long()] += 1
+
+        total_pixels += y_flat.numel()
+
+    return confusion_matrix, total_pixels, total_loss, len(dataloader.dataset)
 
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Load validation dataset
-    _, test_loader = get_dataset_splits_from_h5('data/Dataset.h5', batch_size=8)
+    # Load cnn test dataset
+    _, _, test_loader_cnn = get_dataset_3splits('data/Dataset.h5', dataset_type="cnn", batch_size=8)
     
     model = CropTypeClassifier(num_classes=26)
     model.load_state_dict(torch.load('checkpoints/crop_model_epoch1.pth'))
     model.to(device)
 
-    evaluate(model, test_loader, device, num_classes=26)
+    metrics_cnn = compute_metrics_from_CM(evaluate_cnn(model, test_loader_cnn, device, num_classes=26))
+
+
+    # Load rf test dataset
+    _, _, test_loader_fr = get_dataset_3splits('data/Dataset.h5', dataset_type="cnn", batch_size=8)
+
+    # === Extract X_test (features) ===
+    X_test = []
+    for X_batch, _ in test_loader_fr:
+        X_test.append(X_batch.numpy())
+    X_test = np.concatenate(X_test, axis=0)
+
+    # === Load XGBoost model ===
+    xgb_model = XGBClassifier()
+    xgb_model.load_model("xgb_model.json") # Which path ??? IDK the format
 
 
 if __name__ == "__main__":

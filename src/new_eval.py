@@ -7,6 +7,8 @@ from data import get_dataset_splits_from_h5
 from xgboost import XGBClassifier
 import joblib  # Pour charger un modèle XGBoost si besoin
 
+# CHATGPT OUTPUT AS EXAMPLE
+
 
 def plot_confusion_matrix(cm):
     plt.figure(figsize=(10, 8))
