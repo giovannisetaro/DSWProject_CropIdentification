@@ -35,16 +35,29 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=2
     total_samples = 0
 
     with torch.no_grad():
+        # Loop on every single batch (batch size = 8)
         for x, y in dataloader:
+            # x = input [Batch size, Bands, temporal step, H, W]
+            # y = real classes [Batch size, H, W] 
             x, y = x.to(device), y.to(device)
+
+            # Retrive the logit [Batch size, number of classes, H, W]
             outputs = model(x)
+
             loss = criterion(outputs, y)
+
+            # Compute total_loss by multiplying loss by batch size,
+            # will be useful to compute the average later on
             total_loss += loss.item() * x.size(0)
             total_samples += x.size(0)
 
-            preds = torch.argmax(outputs, dim=1)
-            y_true.extend(y.cpu().numpy())
-            y_pred.extend(preds.cpu().numpy())
+            # Prediction is the highest probability class
+            preds = outputs.argmax(dim=1)
+
+            # Flatten for confusion matrix
+            # Flatten for confusion matrix to enable comparison
+            y_pred = preds.view(-1)
+            y_true = y.view(-1)
 
     _, metrics = evaluate(
         y_true=y_true,

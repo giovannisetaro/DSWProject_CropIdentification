@@ -1,5 +1,6 @@
 import torch
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.metrics import confusion_matrix as sk_confusion_matrix
 import seaborn as sns
 
@@ -98,7 +99,6 @@ def evaluate(y_true, y_pred, num_classes=None, class_names=None,
       - metrics  : dictionary of metrics (see compute_metrics_from_CM)
     """
     # Convert to numpy
-    import numpy as np
     y_true = np.array(y_true).ravel()
     y_pred = np.array(y_pred).ravel()
 
