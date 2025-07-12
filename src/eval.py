@@ -102,7 +102,7 @@ def evaluate(model, dataloader, device, num_classes):
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Charger le dataset validation (adapte selon ta fonction)
+    # Load validation dataset
     _, test_loader = get_dataset_splits_from_h5('data/Dataset.h5', batch_size=8)
     
     model = CropTypeClassifier(num_classes=26)
