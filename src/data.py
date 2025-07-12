@@ -88,52 +88,37 @@ class CropCnnDataset(Dataset):
 #| `test`       | for **overall evaluation e** on never seen data/ on a new spatial zone   !                                       
 
 def get_dataset_3splits(
-    h5_path,
+    trainval_h5_path,       # "data/dataset_val_train.h5"
+    test_h5_path,           # "data/dataset_test.h5"
     dataset_type="cnn",
-    test_split_on="zone",        # or "random"
     val_ratio=0.1,
-    test_ratio=0.2,
     batch_size=8,
     transform=None,
-    seed=42 ):
+    seed=42):
 
-    # --- Load dataset class ---
+    # --- Load train+val dataset ---
     if dataset_type == "cnn":
-        dataset = CropCnnDataset(h5_path, transform=transform)
+        trainval_dataset = CropCnnDataset(trainval_h5_path, transform=transform)
+        test_dataset = CropCnnDataset(test_h5_path, transform=transform)
     elif dataset_type == "rf":
-        dataset = CropTabularDataset(h5_path, transform=transform)
-        batch_size = len(dataset)
+        trainval_dataset = CropTabularDataset(trainval_h5_path, transform=transform)
+        test_dataset = CropTabularDataset(test_h5_path, transform=transform)
+        batch_size = len(trainval_dataset)
     else:
         raise ValueError("Invalid dataset_type")
 
-    with h5py.File(h5_path, 'r') as hf:
+    with h5py.File(trainval_h5_path, 'r') as hf:
         zones = hf["zones"][:]
         zones = [z.decode() if isinstance(z, bytes) else str(z) for z in zones]
 
-    indices = list(range(len(dataset)))
+    indices = list(range(len(trainval_dataset)))
 
-        # === Step 1: test split by zone ===
+    # === Step 1: compute majority class on train+val ===
+    majority_classes_dict = {}
+    majority_classes = []
 
-    if test_split_on == "zone":
-        stratify_labels = zones
-    elif test_split_on == "random":
-        stratify_labels = None
-    else:
-        raise ValueError("Invalid test_split_on")
-
-    trainval_idx, test_idx = train_test_split(
-        indices,
-        test_size=test_ratio,
-        random_state=seed,
-        stratify=stratify_labels if test_split_on != "random" else None
-    )
-
-    # === Step 2: compute majority class for trainval only ===
-    majority_classes_dict = {}  # clé = index, valeur = classe majoritaire
-    majority_classes =[]
-
-    for idx in trainval_idx:
-        _, y = dataset[idx]
+    for idx in indices:
+        _, y = trainval_dataset[idx]
         y_flat = y.flatten()
         y_nonzero = y_flat[y_flat != 0]
         if len(y_nonzero) > 0:
@@ -143,26 +128,25 @@ def get_dataset_3splits(
         majority_classes.append(mode)
         majority_classes_dict[idx] = mode
 
-    # === Step 3: Remove rare classes from trainval ===
-
+    # === Step 2: Remove rare classes ===
     rare_classes = {cls for cls, count in Counter(majority_classes).items() if count < 2}
     rare_classes.add(0)
 
-    trainval_idx_filtered = [
-        idx for idx in trainval_idx
+    filtered_indices = [
+        idx for idx in indices
         if majority_classes_dict[idx] not in rare_classes
     ]
 
-    majority_classes_filtered = [
-        majority_classes_dict[idx] for idx in trainval_idx_filtered
+    filtered_classes = [
+        majority_classes_dict[idx] for idx in filtered_indices
     ]
 
-    # === Step 4: final train/val split with safe stratification ===
+    # === Step 3: Stratified split train/val ===
     train_idx, val_idx = train_test_split(
-        trainval_idx_filtered,
+        filtered_indices,
         test_size=val_ratio,
         random_state=seed,
-        stratify=majority_classes_filtered
+        stratify=filtered_classes
     )
 
     # --- Collate for tabular dataset ---
@@ -172,14 +156,9 @@ def get_dataset_3splits(
 
     collate_fn = tabular_collate_fn if dataset_type == "rf" else None
 
-    # --- Create data loaders ---
-    # train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    # val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-    # test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-
-    train_set = Subset(dataset, train_idx)
-    val_set = Subset(dataset, val_idx)
-    test_set = Subset(dataset, test_idx)
+    # --- Create dataset subsets ---
+    train_set = Subset(trainval_dataset, train_idx)
+    val_set = Subset(trainval_dataset, val_idx)
+    test_set = test_dataset  # Full test dataset from external file
 
     return train_set, val_set, test_set
-
