@@ -1,30 +1,47 @@
 import h5py
 import torch
+import sklearn
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset,Subset, DataLoader, random_split
 from collections import Counter
+import os
 
+def safe_stratify(labels):
+    counts = Counter(labels)
+    rare_classes = [cls for cls, count in counts.items() if count < 2]
+    if rare_classes:
+        print(f" Stratification désactivée. Classes trop rares : {rare_classes}")
+        return None, rare_classes
+    return labels, []
+    
 
 class CropTabularDataset(Dataset):
     def __init__(self, h5_path, transform=None):
+        # Load data from HDF5 file once during initialization
         with h5py.File(h5_path, 'r') as hf:
-            self.X = torch.tensor(hf['data'][:])  # [N, T, C, H, W]
-            self.Y = torch.tensor(hf['labels'][:])  # [N, H, W]
+            # Load data as torch tensors to avoid repeated conversion later
+            self.X = torch.tensor(hf['data'][:])  # shape: [N, T, C, H, W]
+            self.Y = torch.tensor(hf['labels'][:])  # shape: [N, H, W]
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
         self.transform = transform
 
     def __len__(self):
+        # Return the total number of samples
         return len(self.X)
 
     def __getitem__(self, idx):
-        x = self.X[idx]  # [T, C, H, W]
-        y = self.Y[idx]  # [H, W]
+        # Retrieve sample and label by index
+        x = self.X[idx]  # tensor, shape: [T, C, H, W]
+        y = self.Y[idx]  # tensor, shape: [H, W]
 
+        # Reshape input tensor for tabular model:
+        # Change shape from [T, C, H, W] to [H*W, T*C]
         T, C, H, W = x.shape
-        x = x.permute(2, 3, 0, 1).reshape(-1, T * C)  # [H*W, T*C]
-        y = y.flatten()  # [H*W]
+        x = x.permute(2, 3, 0, 1).reshape(-1, T * C)  # flatten spatial dims, combine time and channels
+        y = y.flatten()  # flatten label mask to 1D [H*W]
 
+        # Apply optional transformation (e.g. normalization)
         if self.transform:
             x = self.transform(x)
 
@@ -33,97 +50,136 @@ class CropTabularDataset(Dataset):
 
 class CropCnnDataset(Dataset):
     def __init__(self, h5_path, transform=None):
-        self.h5_path = h5_path
-        self.transform = transform
-        with h5py.File(self.h5_path, 'r') as hf:
-            self.length = len(hf['data'])
+        # Load data and labels once during initialization from HDF5
+        with h5py.File(h5_path, 'r') as hf:
+            # Convert data to float tensor for CNN input
+            self.X = torch.tensor(hf['data'][:]).float()  # shape: [N, T, C, H, W]
+            # Convert labels to long tensor for classification loss functions
+            self.Y = torch.tensor(hf['labels'][:]).long()  # shape: [N, H, W]
+
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
-        self.hf = None
+
+        self.transform = transform
 
     def __len__(self):
-        return self.length
+        # Return number of samples
+        return len(self.X)
 
     def __getitem__(self, idx):
-        if self.hf is None:
-            self.hf = h5py.File(self.h5_path, 'r')
+        # Permute data shape for CNN input format: [C, T, H, W]
+        x = self.X[idx].permute(1, 0, 2, 3)
+        y = self.Y[idx]
 
-        x = self.hf['data'][idx]  # [T, C, H, W]
-        y = self.hf['labels'][idx]  # [H, W]
-
-        x = torch.tensor(x).float().permute(1, 0, 2, 3)  # [C, T, H, W]
-        y = torch.tensor(y).long()
-
+        # Apply optional transform (e.g. data augmentation)
         if self.transform:
             x = self.transform(x)
 
         return x, y
 
-    def __del__(self):
-        if self.hf is not None:
-            self.hf.close()
-            self.hf = None
 
+
+
+
+#| Split        | for :                                                                                                  
+#| ------------ | -------------------------------------------------------------------------------
+#| `train`      | for training    => stratify by majority class per patch !                                                                              
+#| `validation` | for **evaluate hyperparamètres**, to detect **over-fitting**. **early stopping** => stratify by majority class per patch ! 
+#| `test`       | for **overall evaluation e** on never seen data/ on a new spatial zone   !                                       
 
 def get_dataset_3splits(
-    trainval_h5_path,
-    test_h5_path,
+    h5_path,
     dataset_type="cnn",
+    test_split_on="zone",        # or "random"
     val_ratio=0.1,
+    test_ratio=0.2,
     batch_size=8,
     transform=None,
-    seed=42):
+    seed=42 ):
 
+    # --- Load dataset class ---
     if dataset_type == "cnn":
-        trainval_dataset = CropCnnDataset(trainval_h5_path, transform=transform)
-        test_dataset = CropCnnDataset(test_h5_path, transform=transform)
+        dataset = CropCnnDataset(h5_path, transform=transform)
     elif dataset_type == "rf":
-        trainval_dataset = CropTabularDataset(trainval_h5_path, transform=transform)
-        test_dataset = CropTabularDataset(test_h5_path, transform=transform)
-        batch_size = len(trainval_dataset)
+        dataset = CropTabularDataset(h5_path, transform=transform)
+        batch_size = len(dataset)
     else:
         raise ValueError("Invalid dataset_type")
 
-    # Leggi tutte le label una volta sola, per velocizzare il calcolo della classe maggioritaria
-    with h5py.File(trainval_h5_path, 'r') as hf:
-        all_labels = hf['labels'][:]  # numpy array [N, H, W]
-        zones = hf['zones'][:]
+    with h5py.File(h5_path, 'r') as hf:
+        zones = hf["zones"][:]
         zones = [z.decode() if isinstance(z, bytes) else str(z) for z in zones]
 
-    majority_classes = []
-    for y in all_labels:
+    indices = list(range(len(dataset)))
+
+        # === Step 1: test split by zone ===
+
+    if test_split_on == "zone":
+        stratify_labels = zones
+    elif test_split_on == "random":
+        stratify_labels = None
+    else:
+        raise ValueError("Invalid test_split_on")
+
+    trainval_idx, test_idx = train_test_split(
+        indices,
+        test_size=test_ratio,
+        random_state=seed,
+        stratify=stratify_labels if test_split_on != "random" else None
+    )
+
+    # === Step 2: compute majority class for trainval only ===
+    majority_classes_dict = {}  # clé = index, valeur = classe majoritaire
+    majority_classes =[]
+
+    for idx in trainval_idx:
+        _, y = dataset[idx]
         y_flat = y.flatten()
         y_nonzero = y_flat[y_flat != 0]
         if len(y_nonzero) > 0:
-            mode = torch.mode(torch.tensor(y_nonzero))[0].item()
+            mode = torch.mode(y_nonzero)[0].item()
         else:
             mode = 0
         majority_classes.append(mode)
+        majority_classes_dict[idx] = mode
 
-    indices = list(range(len(trainval_dataset)))
-    majority_classes_dict = dict(zip(indices, majority_classes))
+    # === Step 3: Remove rare classes from trainval ===
 
     rare_classes = {cls for cls, count in Counter(majority_classes).items() if count < 2}
     rare_classes.add(0)
 
-    filtered_indices = [idx for idx in indices if majority_classes_dict[idx] not in rare_classes]
-    filtered_classes = [majority_classes_dict[idx] for idx in filtered_indices]
+    trainval_idx_filtered = [
+        idx for idx in trainval_idx
+        if majority_classes_dict[idx] not in rare_classes
+    ]
 
+    majority_classes_filtered = [
+        majority_classes_dict[idx] for idx in trainval_idx_filtered
+    ]
+
+    # === Step 4: final train/val split with safe stratification ===
     train_idx, val_idx = train_test_split(
-        filtered_indices,
+        trainval_idx_filtered,
         test_size=val_ratio,
         random_state=seed,
-        stratify=filtered_classes
+        stratify=majority_classes_filtered
     )
 
+    # --- Collate for tabular dataset ---
     def tabular_collate_fn(batch):
         x_list, y_list = zip(*batch)
         return torch.cat(x_list), torch.cat(y_list)
 
     collate_fn = tabular_collate_fn if dataset_type == "rf" else None
 
-    train_set = Subset(trainval_dataset, train_idx)
-    val_set = Subset(trainval_dataset, val_idx)
-    test_set = test_dataset
+    # --- Create data loaders ---
+    # train_loader = DataLoader(Subset(dataset, train_idx), batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    # val_loader = DataLoader(Subset(dataset, val_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+    # test_loader = DataLoader(Subset(dataset, test_idx), batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+
+    train_set = Subset(dataset, train_idx)
+    val_set = Subset(dataset, val_idx)
+    test_set = Subset(dataset, test_idx)
 
     return train_set, val_set, test_set
+

@@ -66,7 +66,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
-    train_dataset, val_dataset, _ = get_dataset_3splits("data/dataset_val_train.h5","data/dataset_test.h5", val_ratio=0.15)
+    train_dataset, val_dataset, _ = get_dataset_3splits("data/Dataset.h5", val_ratio=0.15,test_ratio=0.2)
     train_val_dataset = ConcatDataset([train_dataset, val_dataset])
 
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
