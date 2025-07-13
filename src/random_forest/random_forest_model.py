@@ -44,9 +44,9 @@ X_test = scaler.transform(X_test)
 
 # Hyperparameter grid
 param_grid = {
-    "n_estimators": [100, 200],
-    "max_depth": [6, 10],
-    "learning_rate": [0.01, 0.1]
+    "n_estimators": [200],
+    "max_depth": [10],
+    "learning_rate": [0.01]
 }
 
 print("Starting hyperparameter optimization...")
@@ -78,14 +78,15 @@ print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
 
 # Evaluate on test set
 best_model = grid_search.best_estimator_
-dtest = xgb.DMatrix(X_test, device='cuda')
-y_test_pred = final_clf.predict(dtest)
+y_test_pred = best_model.predict(X_test)
 
+class_names = [str(i) for i in range(num_classes)]
 
 print("\n[Final Test Evaluation]")
 _, metrics_test = evaluate(
     y_true=y_test,
     y_pred=y_test_pred,
     num_classes=num_classes,
+    class_names=class_names,
     plot_cm=True
 )
