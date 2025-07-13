@@ -44,12 +44,9 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=2
             total_samples += x.size(0)
 
             preds = outputs.argmax(dim=1)
-
-            # Flatten and accumulate predictions
             y_true.append(y.view(-1).cpu())
             y_pred.append(preds.view(-1).cpu())
 
-    # Concatenate all predictions
     y_true = torch.cat(y_true).numpy()
     y_pred = torch.cat(y_pred).numpy()
 
@@ -67,24 +64,26 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=2
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
 
-    train_dataset, val_dataset, _ = get_dataset_3splits("data/Dataset.h5", val_ratio=0.15, test_ratio=0.15)
+    train_dataset, val_dataset, _ = get_dataset_3splits("data/dataset_val_train.h5","data/dataset_test.h5", val_ratio=0.15)
     train_val_dataset = ConcatDataset([train_dataset, val_dataset])
 
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
     learning_rates = [1e-3, 5e-4, 1e-4]
-    batch_sizes = [64, 128, 256]
-    num_epochs_list = [10, 20, 30]
+    kernel_sizes = [3, 5, 7]  
+    batch_size = 128 
+    num_epochs = 50  
     patience = 3
     min_delta = 1e-4
 
-    for lr, batch_size, num_epochs in itertools.product(learning_rates, batch_sizes, num_epochs_list):
+    for lr, kernel_size in itertools.product(learning_rates, kernel_sizes):
 
-        print(f"\n[HPO] lr={lr}, batch_size={batch_size}")
+        print(f"\n[HPO] lr={lr}, kernel_size={kernel_size}")
 
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
-            print(f"\nFold {fold + 1} | lr={lr}, bs={batch_size}, epochs={num_epochs}, patience={patience}")
+            print(f"\nFold {fold + 1} | lr={lr}, kernel_size={kernel_size}, patience={patience}")
 
             train_subset = Subset(train_val_dataset, train_idx)
             val_subset = Subset(train_val_dataset, val_idx)
@@ -93,19 +92,18 @@ def main():
                 train_subset,
                 batch_size=batch_size,
                 shuffle=True,
-                num_workers=4,
+                num_workers=8,
                 pin_memory=True
             )
             val_loader = DataLoader(
                 val_subset,
                 batch_size=batch_size,
                 shuffle=False,
-                num_workers=4,
+                num_workers=8,
                 pin_memory=True
             )
 
-
-            model = CropTypeClassifier(num_classes=26).to(device)
+            model = CropTypeClassifier(num_classes=26, kernel_size=kernel_size).to(device)  # <-- passiamo kernel_size
             criterion = nn.CrossEntropyLoss()
             optimizer = Adam(model.parameters(), lr=lr)
 
@@ -127,7 +125,7 @@ def main():
                     best_val_loss = val_loss
                     best_epoch = epoch
                     early_stop_counter = 0
-                    subdir = f"checkpoints/lr_{lr}_bs_{batch_size}"
+                    subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
                     os.makedirs(subdir, exist_ok=True)
                     best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
                     torch.save(model.state_dict(), best_model_path)
@@ -142,7 +140,6 @@ def main():
             print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
             if best_model_path:
                 print(f"Model saved at: {best_model_path}")
-
 
 if __name__ == "__main__":
     main()
