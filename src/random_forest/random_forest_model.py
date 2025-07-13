@@ -44,9 +44,9 @@ X_test = scaler.transform(X_test)
 
 # Hyperparameter grid
 param_grid = {
-    "n_estimators": [200],
-    "max_depth": [10],
-    "learning_rate": [0.01]
+    "n_estimators": [100,200],
+    "max_depth": [10,6],
+    "learning_rate": [0.01,0.1]
 }
 
 print("Starting hyperparameter optimization...")
