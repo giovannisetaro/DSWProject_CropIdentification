@@ -5,21 +5,11 @@ from torch.utils.data import Dataset, Subset
 from collections import Counter
 
 
-def safe_stratify(labels):
-    counts = Counter(labels)
-    rare_classes = [cls for cls, count in counts.items() if count < 2]
-    if rare_classes:
-        print(f" Stratification désactivée. Classes trop rares : {rare_classes}")
-        return None, rare_classes
-    return labels, []
-
-
 class CropTabularDataset(Dataset):
     def __init__(self, h5_path, transform=None):
-        # Load data from HDF5 file once during initialization
         with h5py.File(h5_path, 'r') as hf:
-            self.X = torch.tensor(hf['data'][:])  # shape: [N, T, C, H, W]
-            self.Y = torch.tensor(hf['labels'][:])  # shape: [N, H, W]
+            self.X = torch.tensor(hf['data'][:])  # [N, T, C, H, W]
+            self.Y = torch.tensor(hf['labels'][:])  # [N, H, W]
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
         self.transform = transform
@@ -45,25 +35,21 @@ class CropCnnDataset(Dataset):
     def __init__(self, h5_path, transform=None):
         self.h5_path = h5_path
         self.transform = transform
-
-        # Open once to get length and metadata, file handle not kept open here
         with h5py.File(self.h5_path, 'r') as hf:
             self.length = len(hf['data'])
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
-
-        self.hf = None  # File handler per worker, will be lazy loaded in __getitem__
+        self.hf = None
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
-        # Lazy open file per worker
         if self.hf is None:
             self.hf = h5py.File(self.h5_path, 'r')
 
-        x = self.hf['data'][idx]      # [T, C, H, W]
-        y = self.hf['labels'][idx]    # [H, W]
+        x = self.hf['data'][idx]  # [T, C, H, W]
+        y = self.hf['labels'][idx]  # [H, W]
 
         x = torch.tensor(x).float().permute(1, 0, 2, 3)  # [C, T, H, W]
         y = torch.tensor(y).long()
@@ -98,39 +84,30 @@ def get_dataset_3splits(
     else:
         raise ValueError("Invalid dataset_type")
 
+    # Leggi tutte le label una volta sola, per velocizzare il calcolo della classe maggioritaria
     with h5py.File(trainval_h5_path, 'r') as hf:
-        zones = hf["zones"][:]
+        all_labels = hf['labels'][:]  # numpy array [N, H, W]
+        zones = hf['zones'][:]
         zones = [z.decode() if isinstance(z, bytes) else str(z) for z in zones]
 
-    indices = list(range(len(trainval_dataset)))
-
-    majority_classes_dict = {}
     majority_classes = []
-
-    # WARNING: this loop can still be slow if dataset is very large,
-    # consider caching majority classes if possible
-    for idx in indices:
-        _, y = trainval_dataset[idx]
+    for y in all_labels:
         y_flat = y.flatten()
         y_nonzero = y_flat[y_flat != 0]
         if len(y_nonzero) > 0:
-            mode = torch.mode(y_nonzero)[0].item()
+            mode = torch.mode(torch.tensor(y_nonzero))[0].item()
         else:
             mode = 0
         majority_classes.append(mode)
-        majority_classes_dict[idx] = mode
+
+    indices = list(range(len(trainval_dataset)))
+    majority_classes_dict = dict(zip(indices, majority_classes))
 
     rare_classes = {cls for cls, count in Counter(majority_classes).items() if count < 2}
     rare_classes.add(0)
 
-    filtered_indices = [
-        idx for idx in indices
-        if majority_classes_dict[idx] not in rare_classes
-    ]
-
-    filtered_classes = [
-        majority_classes_dict[idx] for idx in filtered_indices
-    ]
+    filtered_indices = [idx for idx in indices if majority_classes_dict[idx] not in rare_classes]
+    filtered_classes = [majority_classes_dict[idx] for idx in filtered_indices]
 
     train_idx, val_idx = train_test_split(
         filtered_indices,
