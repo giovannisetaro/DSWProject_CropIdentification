@@ -1,22 +1,19 @@
 import torch
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Dataset
 import h5py
-from sklearn.model_selection import train_test_split
-from collections import Counter
-import numpy as np
 
 class CropCnnDataset(Dataset):
     def __init__(self, h5_path, transform=None, debug=False, num_classes=50, ignore_value=255):
         """
-        Lazily loads data from an HDF5 file.
-        Opens the file only once per worker to avoid repeated I/O overhead.
+        Dataset that lazily loads data from an HDF5 file.
+        Opens the file once per worker to avoid overhead of repeatedly opening it.
 
         Args:
             h5_path (str): Path to the HDF5 file.
-            transform (callable): Optional transform to apply to each input sample.
-            debug (bool): Whether to print debug info on each sample.
-            num_classes (int): Maximum number of valid class labels.
-            ignore_value (int): Value to treat as invalid (e.g. 255).
+            transform (callable, optional): Optional transform to apply to inputs.
+            debug (bool): Whether to print debug info about labels.
+            num_classes (int): Number of classes expected in labels.
+            ignore_value (int): Label value to ignore and convert to background (e.g. 255).
         """
         self.h5_path = h5_path
         self.transform = transform
@@ -25,32 +22,30 @@ class CropCnnDataset(Dataset):
         self.ignore_value = ignore_value
         self.h5_file = None
 
-        # Open once to determine dataset length
+        # Open once to get dataset length
         with h5py.File(h5_path, 'r') as hf:
             self.length = hf['data'].shape[0]
 
     def __getitem__(self, idx):
-        # Open the file if not already opened (one per worker)
+        # Open file on first access per worker (lazy loading)
         if self.h5_file is None:
             self.h5_file = h5py.File(self.h5_path, 'r')
 
-        # Load input and label
+        # Load data and label tensors
         x = torch.tensor(self.h5_file['data'][idx]).float()  # shape: [T, C, H, W]
         y = torch.tensor(self.h5_file['labels'][idx]).long() # shape: [H, W]
 
-        # Convert abnormal values (e.g., 255) to background class (0)
-        y[y == self.ignore_value] = 0  # or use a valid default class if 0 is not meaningful
+        # Convert ignore_value labels (e.g., 255) to background (0)
+        y[y == self.ignore_value] = 0
 
-        # Optional: sanity check for labels out of range
+        # Optional debug: check label ranges
         if self.debug:
             max_label = y.max().item()
             min_label = y.min().item()
             if max_label >= self.num_classes or min_label < 0:
-                print(f"[WARNING] Invalid label range at sample {idx}: min={min_label}, max={max_label}")
-            else:
-                print(f"[DEBUG] Sample {idx} - y.min(): {min_label}, y.max(): {max_label}")
+                print(f"[WARNING] Sample {idx} label out of range: min={min_label}, max={max_label}")
 
-        # Permute to [C, T, H, W] for CNN input
+        # Permute input tensor to [C, T, H, W] for CNN input
         x = x.permute(1, 0, 2, 3)
 
         if self.transform:
@@ -62,93 +57,68 @@ class CropCnnDataset(Dataset):
         return self.length
 
     def __del__(self):
-        # Ensure the file is closed on deletion
+        # Close the HDF5 file when the dataset object is deleted
         if self.h5_file is not None:
             try:
                 self.h5_file.close()
             except:
                 pass
 
+from torch.utils.data import Subset
+from sklearn.model_selection import train_test_split
+import h5py
 
 def get_dataset_3splits(
-    h5_path_trainval,
-    h5_path_test,
+    h5_train_val_path,
+    h5_test_path,
     dataset_type="cnn",
     val_ratio=0.1,
+    batch_size=8,
     transform=None,
-    seed=42,
-    debug=False,
-    num_classes=50
+    seed=42
 ):
     """
-    Loads training, validation, and test datasets from separate HDF5 files.
-    Performs a stratified split based on majority class in each label mask.
+    Load datasets and create train/validation splits.
 
     Args:
-        h5_path_trainval (str): Path to train+val HDF5 file.
-        h5_path_test (str): Path to test HDF5 file.
-        dataset_type (str): Type of dataset to return ("cnn" supported).
-        val_ratio (float): Fraction of trainval data to use for validation.
-        transform (callable): Optional transform to apply to each sample.
+        h5_train_val_path (str): Path to HDF5 file containing training+validation data.
+        h5_test_path (str): Path to HDF5 file containing test data.
+        dataset_type (str): Type of dataset ("cnn" supported).
+        val_ratio (float): Fraction of training data to use as validation.
+        batch_size (int): Batch size (not used here but could be used for custom datasets).
+        transform (callable): Optional transform applied to inputs.
         seed (int): Random seed for reproducibility.
-        debug (bool): If True, prints label statistics.
-        num_classes (int): Number of valid classes (for sanity checks).
-    
+
     Returns:
-        train_dataset, val_dataset, test_dataset: PyTorch Dataset or Subset instances.
+        train_set, val_set, test_set (torch.utils.data.Dataset or Subset): Datasets for training, validation, and testing.
     """
+    if dataset_type == "cnn":
+        train_val_dataset = CropCnnDataset(h5_train_val_path, transform=transform)
+        test_dataset = CropCnnDataset(h5_test_path, transform=transform)
+    else:
+        raise ValueError("Invalid dataset_type")
 
-    # Read all labels once to enable stratified splitting
-    with h5py.File(h5_path_trainval, 'r') as hf:
-        labels = hf['labels'][:]  # shape: [N, H, W]
+    # Read zones for stratification during train/val split
+    with h5py.File(h5_train_val_path, 'r') as hf:
+        zones_train_val = hf["zones"][:]
+        # Decode bytes to strings if needed
+        zones_train_val = [z.decode() if isinstance(z, bytes) else str(z) for z in zones_train_val]
 
-    # Compute majority (non-zero) class per sample
-    majority_classes = []
-    for y in labels:
-        y_flat = y.flatten()
-        y_nonzero = y_flat[y_flat != 0]
-        y_valid = y_nonzero[y_nonzero != 255]
-        if len(y_valid) > 0:
-            mode_class = torch.mode(torch.tensor(y_valid))[0].item()
-        else:
-            mode_class = 0
-        majority_classes.append(mode_class)
+    indices_train_val = list(range(len(train_val_dataset)))
 
-    # Exclude rare classes (fewer than 2 samples) and class 0 (background)
-    counts = Counter(majority_classes)
-    rare_classes = {cls for cls, c in counts.items() if c < 2}
-    rare_classes.add(0)
-
-    # Keep only samples with valid majority classes
-    valid_indices = [i for i, cls in enumerate(majority_classes) if cls not in rare_classes]
-    valid_majority_classes = [majority_classes[i] for i in valid_indices]
-
-    # Stratified train/val split
+    # Stratified split on zones
     train_idx, val_idx = train_test_split(
-        valid_indices,
+        indices_train_val,
         test_size=val_ratio,
         random_state=seed,
-        stratify=valid_majority_classes
+        stratify=zones_train_val
     )
 
-    if dataset_type == "cnn":
-            full_trainval_dataset = CropCnnDataset(h5_path_trainval, transform=transform, debug=debug, num_classes=num_classes)
-            test_dataset = CropCnnDataset(h5_path_test, transform=transform, debug=debug, num_classes=num_classes)
-    else:
-        raise NotImplementedError(f"Dataset type '{dataset_type}' not implemented")
+    # Create subset datasets for train and val splits
+    train_set = Subset(train_val_dataset, train_idx)
+    val_set = Subset(train_val_dataset, val_idx)
 
-    train_dataset = Subset(full_trainval_dataset, train_idx)
-    val_dataset = Subset(full_trainval_dataset, val_idx)
+    # Test dataset is the full test set
+    test_set = test_dataset
 
-    # Debug: show label ranges in subsets
-    if debug:
-        print("[DEBUG] Checking label ranges in subsets:")
-        train_samples = [full_trainval_dataset[i][1] for i in train_idx[:10]]
-        train_all_vals = torch.cat([y.flatten() for y in train_samples])
-        print(f"Train labels: min={train_all_vals.min().item()}, max={train_all_vals.max().item()}")
-
-        val_samples = [full_trainval_dataset[i][1] for i in val_idx[:10]]
-        val_all_vals = torch.cat([y.flatten() for y in val_samples])
-        print(f"Val labels: min={val_all_vals.min().item()}, max={val_all_vals.max().item()}")
-
-    return train_dataset, val_dataset, test_dataset
+    return train_set, val_set, test_set
