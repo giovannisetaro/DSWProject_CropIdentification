@@ -6,6 +6,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, Subset, ConcatDataset
 from sklearn.model_selection import KFold
 from tqdm import tqdm
+from torch.utils.data import RandomSampler
 
 from src.data import get_dataset_3splits, CropCnnDataset
 from src.CNN.CNN_Model import CropTypeClassifier
@@ -17,7 +18,7 @@ NUM_CLASSES = 51
 # HPO grid (no batch size)
 LEARNING_RATES = [1e-3, 5e-4]
 KERNEL_SIZES = [3, 5]
-BATCH_SIZE = 30  # fixed
+BATCH_SIZE = 10  # fixed
 
 # Fixed training settings
 NUM_EPOCHS = 50
@@ -97,7 +98,7 @@ def main():
 
     # Grid search over learning rate and kernel size
     for lr, kernel_size in itertools.product(LEARNING_RATES, KERNEL_SIZES):
-        print(f"\n HPO Trial: LR={lr}, Kernel={kernel_size}, Batch={BATCH_SIZE}")
+        print(f"\n HPO Trial: LR={lr}, Kernel={kernel_size}")
 
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
             print(f"\n Fold {fold + 1}")
@@ -108,10 +109,11 @@ def main():
             train_loader = DataLoader(
                 train_subset,
                 batch_size=BATCH_SIZE,
-                shuffle=True,
+                sampler=RandomSampler(train_subset, replacement=False, num_samples=int(0.3 * len(train_subset))),  # 30% of data
                 num_workers=NUM_WORKERS,
                 pin_memory=True,
-                drop_last=False
+                drop_last=False,
+                persistent_workers=True
             )
             val_loader = DataLoader(
                 val_subset,
@@ -119,7 +121,8 @@ def main():
                 shuffle=False,
                 num_workers=NUM_WORKERS,
                 pin_memory=True,
-                drop_last=False
+                drop_last=False,
+                persistent_workers=True
             )
 
             model = CropTypeClassifier(num_classes=NUM_CLASSES, kernel_size=kernel_size).to(device)
