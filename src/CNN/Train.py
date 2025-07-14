@@ -18,10 +18,10 @@ NUM_CLASSES = 51
 # HPO grid (no batch size)
 LEARNING_RATES = [1e-3, 5e-4]
 KERNEL_SIZES = [3, 5]
-BATCH_SIZE = 10  # fixed
+BATCH_SIZE = 64  # fixed
 
 # Fixed training settings
-NUM_EPOCHS = 50
+NUM_EPOCHS = 10
 NUM_WORKERS = 4
 PATIENCE = 5
 MIN_DELTA = 1e-4
