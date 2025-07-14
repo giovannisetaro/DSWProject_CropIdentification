@@ -162,9 +162,13 @@ class UNet(nn.Module):
 
 
 class CropTypeClassifier(nn.Module):
-    def __init__(self, num_classes, temporal_out_channels=64):
+    def __init__(self, num_classes, temporal_out_channels=64, kernel_size=3):
         super().__init__()
-        self.temporal_cnn = TemporalPixelCNN(in_channels=4, out_channels=temporal_out_channels)
+        self.temporal_cnn = TemporalPixelCNN(
+            in_channels=4,
+            out_channels=temporal_out_channels,
+            kernel_size=kernel_size
+        )
         self.unet = UNet(in_ch=temporal_out_channels, out_ch=num_classes)
 
     def forward(self, x):

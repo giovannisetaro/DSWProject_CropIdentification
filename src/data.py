@@ -17,53 +17,66 @@ def safe_stratify(labels):
 
 class CropTabularDataset(Dataset):
     def __init__(self, h5_path, transform=None):
+        # Load data from HDF5 file once during initialization
         with h5py.File(h5_path, 'r') as hf:
-            self.X = hf['data'][:]  # [N, T, C, H, W]
-            self.Y = hf['labels'][:]  # [N, H, W]
+            # Load data as torch tensors to avoid repeated conversion later
+            self.X = torch.tensor(hf['data'][:])  # shape: [N, T, C, H, W]
+            self.Y = torch.tensor(hf['labels'][:])  # shape: [N, H, W]
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
         self.transform = transform
 
     def __len__(self):
+        # Return the total number of samples
         return len(self.X)
 
     def __getitem__(self, idx):
-        x = torch.tensor(self.X[idx])  # [T, C, H, W]
-        y = torch.tensor(self.Y[idx])  # [H, W]
+        # Retrieve sample and label by index
+        x = self.X[idx]  # tensor, shape: [T, C, H, W]
+        y = self.Y[idx]  # tensor, shape: [H, W]
 
-        # Transform to [H*W, T*C]
+        # Reshape input tensor for tabular model:
+        # Change shape from [T, C, H, W] to [H*W, T*C]
         T, C, H, W = x.shape
-        x = x.permute(2, 3, 0, 1).reshape(-1, T * C)  # [H*W, T*C]
-        y = y.flatten()  # [H*W]
+        x = x.permute(2, 3, 0, 1).reshape(-1, T * C)  # flatten spatial dims, combine time and channels
+        y = y.flatten()  # flatten label mask to 1D [H*W]
 
+        # Apply optional transformation (e.g. normalization)
         if self.transform:
             x = self.transform(x)
 
         return x, y
-    
 
 
 class CropCnnDataset(Dataset):
     def __init__(self, h5_path, transform=None):
+        # Load data and labels once during initialization from HDF5
         with h5py.File(h5_path, 'r') as hf:
-            self.X = torch.tensor(hf['data'][:])  # [N, T, C, H, W]
-            self.Y = torch.tensor(hf['labels'][:]).long()  # [N, H, W]
+            # Convert data to float tensor for CNN input
+            self.X = torch.tensor(hf['data'][:]).float()  # shape: [N, T, C, H, W]
+            # Convert labels to long tensor for classification loss functions
+            self.Y = torch.tensor(hf['labels'][:]).long()  # shape: [N, H, W]
 
             self.zones = hf['zones'][:]
             self.ID_Parcelles = hf['ID_Parcelles'][:]
 
         self.transform = transform
 
-
     def __len__(self):
+        # Return number of samples
         return len(self.X)
 
     def __getitem__(self, idx):
-        x = self.X[idx].permute(1, 0, 2, 3)  # [C, T, H, W]
+        # Permute data shape for CNN input format: [C, T, H, W]
+        x = self.X[idx].permute(1, 0, 2, 3)
         y = self.Y[idx]
+
+        # Apply optional transform (e.g. data augmentation)
         if self.transform:
             x = self.transform(x)
+
         return x, y
+
 
 
 

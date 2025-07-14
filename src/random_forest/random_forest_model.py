@@ -2,7 +2,9 @@ import numpy as np
 from xgboost import XGBClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, GridSearchCV
+from src.eval import evaluate
+import xgboost as xgb
 
 # Load datasets
 train_data = np.load("data/train_pixelwise.npz")
@@ -19,11 +21,8 @@ y_train_val = np.concatenate([y_train, y_val], axis=0)
 
 print("Train+Val shape:", X_train_val.shape, y_train_val.shape)
 
-# === REMAP CLASSES TO CONSECUTIVE INTEGERS ===
+# Remap class labels to consecutive integers
 all_classes = np.unique(y_train_val)
-print("Original classes:", all_classes)
-
-# Create mapping original_label -> consecutive_label
 class_map = {old_label: new_label for new_label, old_label in enumerate(all_classes)}
 
 def map_labels(y, mapping):
@@ -32,70 +31,62 @@ def map_labels(y, mapping):
         y_mapped[y == old_label] = new_label
     return y_mapped
 
-# Apply remapping to train+val and test labels
 y_train_val = map_labels(y_train_val, class_map)
 y_test = map_labels(y_test, class_map)
 
 num_classes = len(all_classes)
-print(f"Remapped classes: {np.unique(y_train_val)}")
 print(f"Number of classes: {num_classes}")
 
-# Normalize data (fit scaler only on train+val)
+# Normalize features
 scaler = StandardScaler()
 X_train_val = scaler.fit_transform(X_train_val)
 X_test = scaler.transform(X_test)
 
-# Set up 5-fold cross-validation
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
+# Hyperparameter grid
+param_grid = {
+    "n_estimators": [100,200],
+    "max_depth": [10,6],
+    "learning_rate": [0.01,0.1]
+}
 
-fold_accuracies = []
+print("Starting hyperparameter optimization...")
 
-print("Starting KFold cross-validation with XGBoost...")
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
-    # Split fold data
-    X_tr, X_va = X_train_val[train_idx], X_train_val[val_idx]
-    y_tr, y_va = y_train_val[train_idx], y_train_val[val_idx]
-
-    # Create XGBoost model with fixed params
-    clf = XGBClassifier(
-        device ='cuda',
-        tree_method='gpu_hist',
-        eval_metric='mlogloss',
-        num_class=num_classes,
-        n_estimators=100,
-        max_depth=10,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    # Train model
-    clf.fit(X_tr, y_tr)
-
-    # Validate and compute accuracy
-    y_va_pred = clf.predict(X_va)
-    acc = accuracy_score(y_va, y_va_pred)
-    fold_accuracies.append(acc)
-
-    print(f"Fold {fold+1} accuracy: {acc:.4f}")
-
-# Print average accuracy across folds
-print(f"Mean CV accuracy: {np.mean(fold_accuracies):.4f}")
-
-# Train final model on full train+val set
-final_clf = XGBClassifier(
-    device ='cuda',
-    tree_method='gpu_hist',
-    eval_metric='mlogloss',
+clf = XGBClassifier(
+    tree_method='hist',
+    device='cuda',
     num_class=num_classes,
-    n_estimators=100,
-    max_depth=10,
+    objective="multi:softprob",
+    eval_metric='mlogloss',
     random_state=42,
     n_jobs=-1
 )
-final_clf.fit(X_train_val, y_train_val)
 
-# Test final model on test set
-y_test_pred = final_clf.predict(X_test)
-acc_test = accuracy_score(y_test, y_test_pred)
-print(f"Test accuracy: {acc_test:.4f}")
+grid_search = GridSearchCV(
+    estimator=clf,
+    param_grid=param_grid,
+    cv=3,
+    scoring='accuracy',
+    verbose=2,
+    n_jobs=-1
+)
+
+grid_search.fit(X_train_val, y_train_val)
+
+print("\nBest hyperparameters found:")
+print(grid_search.best_params_)
+print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
+
+# Evaluate on test set
+best_model = grid_search.best_estimator_
+y_test_pred = best_model.predict(X_test)
+
+class_names = [str(i) for i in range(num_classes)]
+
+print("\n[Final Test Evaluation]")
+_, metrics_test = evaluate(
+    y_true=y_test,
+    y_pred=y_test_pred,
+    num_classes=num_classes,
+    class_names=class_names,
+    plot_cm=True
+)
