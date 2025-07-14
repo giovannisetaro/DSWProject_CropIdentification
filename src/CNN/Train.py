@@ -18,12 +18,12 @@ NUM_CLASSES = 51
 # HPO grid (no batch size)
 LEARNING_RATES = [1e-3, 5e-4]
 KERNEL_SIZES = [3, 5]
-BATCH_SIZE = 64  # fixed
+BATCH_SIZE = 16  # fixed
 
 # Fixed training settings
 NUM_EPOCHS = 10
-NUM_WORKERS = 4
-PATIENCE = 5
+NUM_WORKERS = 16
+PATIENCE = 3
 MIN_DELTA = 1e-4
 
 def train_loop(model, dataloader, optimizer, criterion, device):
@@ -33,6 +33,8 @@ def train_loop(model, dataloader, optimizer, criterion, device):
 
     for x, y in tqdm(dataloader, desc="Training", leave=False):
         x, y = x.to(device), y.to(device)
+        print(" x.device:", x.device)
+        print(" model.device:", next(model.parameters()).device)
         optimizer.zero_grad()
         outputs = model(x)
         loss = criterion(outputs, y)
@@ -94,7 +96,7 @@ def main():
     train_val_dataset = ConcatDataset(datasets)
 
     # K-Fold
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    kf = KFold(n_splits=3, shuffle=True, random_state=42)
 
     # Grid search over learning rate and kernel size
     for lr, kernel_size in itertools.product(LEARNING_RATES, KERNEL_SIZES):
@@ -113,7 +115,7 @@ def main():
                 num_workers=NUM_WORKERS,
                 pin_memory=True,
                 drop_last=False,
-                persistent_workers=True
+                persistent_workers=False
             )
             val_loader = DataLoader(
                 val_subset,
@@ -122,7 +124,7 @@ def main():
                 num_workers=NUM_WORKERS,
                 pin_memory=True,
                 drop_last=False,
-                persistent_workers=True
+                persistent_workers=False
             )
 
             model = CropTypeClassifier(num_classes=NUM_CLASSES, kernel_size=kernel_size).to(device)
