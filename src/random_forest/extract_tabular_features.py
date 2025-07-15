@@ -1,27 +1,44 @@
+import os
 import h5py
 import torch
 import numpy as np
 from collections import defaultdict
-from tqdm import tqdm
+
+IGNORE_LABEL = 225  # label to ignore (masked out)
 
 def flatten_samples(X, Y):
+    """
+    Flattens input tensors from (N, T, C, H, W) and (N, H, W)
+    to 2D pixel-wise matrices: (N·H·W, T·C) and (N·H·W,)
+    """
     N, T, C, H, W = X.shape
     X = X.permute(0, 3, 4, 1, 2).reshape(N * H * W, T * C)
     Y = Y.reshape(N * H * W)
     return X.numpy(), Y.numpy()
 
-def main():
-    with h5py.File("data/dataset_val_train.h5", 'r') as hf:
-        X_valtrain = torch.tensor(hf['data'][:])
-        Y_valtrain = torch.tensor(hf['labels'][:])
+def mask_ignore_label(X, y, ignore_value=IGNORE_LABEL):
+    """
+    Filters out pixels where the label is equal to `ignore_value`.
+    """
+    mask = y != ignore_value
+    return X[mask], y[mask]
 
+def main():
+    os.makedirs("data", exist_ok=True)
+
+    # Load train+val data
+    with h5py.File("data/dataset_val_train.h5", 'r') as hf:
+        X_valtrain = torch.tensor(hf['data'][:])   # (N, T, C, H, W)
+        Y_valtrain = torch.tensor(hf['labels'][:]) # (N, H, W)
+
+    # Load test data
     with h5py.File("data/dataset_test.h5", 'r') as hf:
         X_test = torch.tensor(hf['data'][:])
         Y_test = torch.tensor(hf['labels'][:])
 
+    # Greedy class coverage for training set
     N = X_valtrain.shape[0]
     all_indices = list(range(N))
-
     class_to_samples = defaultdict(set)
     for i in range(N):
         unique_classes = torch.unique(Y_valtrain[i])
@@ -53,20 +70,25 @@ def main():
     print(f"Validation samples: {len(val_indices)}")
     print(f"Test samples: {X_test.shape[0]}")
 
-    X_train = X_valtrain[list(train_indices)]
-    Y_train = Y_valtrain[list(train_indices)]
-    X_val = X_valtrain[val_indices]
-    Y_val = Y_valtrain[val_indices]
+    # Combine train + val
+    X_trainval = torch.cat([X_valtrain[list(train_indices)], X_valtrain[val_indices]], dim=0)
+    Y_trainval = torch.cat([Y_valtrain[list(train_indices)], Y_valtrain[val_indices]], dim=0)
 
-
-    X_train_flat, y_train_flat = flatten_samples(X_train, Y_train)
-    X_val_flat, y_val_flat = flatten_samples(X_val, Y_val)
+    # Flatten to pixel-level
+    X_trainval_flat, y_trainval_flat = flatten_samples(X_trainval, Y_trainval)
     X_test_flat, y_test_flat = flatten_samples(X_test, Y_test)
 
-    print(f"Train pixels: {X_train_flat.shape[0]}, classes: {np.unique(y_train_flat)}")
-    print(f"Val pixels: {X_val_flat.shape[0]}, classes: {np.unique(y_val_flat)}")
+    # Apply ignore mask
+    X_trainval_flat, y_trainval_flat = mask_ignore_label(X_trainval_flat, y_trainval_flat)
+    X_test_flat, y_test_flat = mask_ignore_label(X_test_flat, y_test_flat)
+
+    print(f"TrainVal pixels: {X_trainval_flat.shape[0]}, classes: {np.unique(y_trainval_flat)}")
     print(f"Test pixels: {X_test_flat.shape[0]}, classes: {np.unique(y_test_flat)}")
 
-    np.savez("data/train_pixelwise.npz", X=X_train_flat, y=y_train_flat)
-    np.savez("data/val_pixelwise.npz", X=X_val_flat, y=y_val_flat)
+    # Save results
+    np.savez("data/trainval_pixelwise.npz", X=X_trainval_flat, y=y_trainval_flat)
     np.savez("data/test_pixelwise.npz", X=X_test_flat, y=y_test_flat)
+    print("Saved: trainval_pixelwise.npz and test_pixelwise.npz")
+
+if __name__ == "__main__":
+    main()
