@@ -23,11 +23,10 @@ spec:
         resources:
           requests:
             cpu: "5"
-            memory: 10Gi
+            memory: 20Gi
             nvidia.com/gpu: 1
           limits:
             cpu: "6"
-            memory: 20Gi
             nvidia.com/gpu: 1
         volumeMounts:
           - name: dsw-pvc
@@ -37,8 +36,8 @@ spec:
           - name: dshm
             mountPath: /dev/shm   # monta la shared memory nel container
       
-      nodeSelector:
-        gpu: v100
+      # nodeSelector:
+      #   gpu: A100
       volumes:
         - name: dsw-pvc
           persistentVolumeClaim:
@@ -49,4 +48,4 @@ spec:
         - name: dshm
           emptyDir:
             medium: Memory
-            sizeLimit: 2Gi   # imposta 2 GB di shared memory
+            sizeLimit: 2Gi 

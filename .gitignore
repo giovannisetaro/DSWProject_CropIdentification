@@ -33,3 +33,9 @@ data/
 /outputs/
 *.ckpt
 *.pth
+
+#Checkpoint files for CNN
+/checkpoints/
+
+screenlog.0
+/models/

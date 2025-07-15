@@ -2,215 +2,154 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class TemporalPixelCNNV1(nn.Module):
-    def __init__(self, in_channels=4, out_channels=64, kernel_size=3):
-        #in_channels : number of bands
-        # out_channels : number of filter (hyper parametre)
-        super().__init__()
-        self.conv1d = nn.Conv1d(in_channels, out_channels, kernel_size, padding=kernel_size//2)
-        # padding=kernel_size//2 so we keep the same temporal dimention, here (12 → 12).
-        self.bn = nn.BatchNorm1d(out_channels)
-        # Batch Normalization to stabilize the learning 
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        # x: [B, C=4, T=12, H=24, W=24]
-        B, C, T, H, W = x.shape
-
-        # Reshape pour traiter chaque pixel indépendamment / pixel wise
-        x = x.permute(0, 3, 4, 1, 2).contiguous()  # [B, H, W, C, T]
-
-        #convolution 1D temporelle/multibande pixel-wise
-        x = x.view(B*H*W, C, T)                    # [B*H*W, C, T]
-        
-        x = self.conv1d(x)        # [B*H*W, D=number of filters, T (bcz we choose a padding=kernel_size//2)]
-        x = self.bn(x)
-        x = self.relu(x)
-
-        # Option 1: robust to noise but lost of peaks / rapid variations (harvest/ blooming)
-
-       # x = x.mean(dim=2)    # [B*H*W, D]
-        #Option 2 – Max temporel : sensitive to peaks / rapid variations but ignore the global dynamic 
-        x = x.max(dim=2).values  # [B*H*W, D]
-
-        #option 3 : attention module but .... no time
-
-        # Reformer en tenseur image embedding
-        D = x.size(1)
-        x = x.view(B, H, W, D).permute(0, 3, 1, 2) # [B, D, H, W]
-        return x
-    
-############## ADDING +1 conv layer to have a bigger receptive temporal field in the embedding ! 
-
-class TemporalPixelCNN(nn.Module):
-    def __init__(self, in_channels=4, out_channels=64, kernel_size=3):
-        super().__init__()
-        # First 1D convolution over the temporal dimension
-        # Kernel size defines how many months are looked at simultaneously
-        # Padding is set to keep the temporal dimension unchanged (same length output)
-        self.conv1 = nn.Conv1d(in_channels, out_channels, kernel_size, padding=kernel_size//2)
-        self.bn1 = nn.BatchNorm1d(out_channels)  # BatchNorm to stabilize training
-        self.relu = nn.ReLU()
-
-        # Second 1D convolution to increase temporal receptive field
-        # By stacking two conv layers, the model captures longer temporal patterns (e.g. >3 months)
-        self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size, padding=kernel_size//2)
-        self.bn2 = nn.BatchNorm1d(out_channels)
-
-    def forward(self, x):
-        # x shape: [B, C=4, T=12, H=24, W=24]
-        B, C, T, H, W = x.shape
-
-        # Permute to bring spatial dims upfront, so that we can treat each pixel independently
-        # New shape: [B, H, W, C, T]
-        x = x.permute(0, 3, 4, 1, 2).contiguous()
-
-        # Flatten batch and spatial dims to process each pixel time series independently
-        # Shape: [B*H*W, C, T]
-        x = x.view(B*H*W, C, T)
-
-        # First temporal convolution
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        # Second temporal convolution expands the temporal receptive field
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-
-        # Temporal pooling (max) reduces temporal dimension, keeps strongest temporal features
-        # Result shape: [B*H*W, out_channels]
-        x = x.max(dim=2).values
-
-        # Reshape back to image embedding form for spatial CNN input
-        # Shape: [B, out_channels, H, W]
-        D = x.size(1)
-        x = x.view(B, H, W, D).permute(0, 3, 1, 2)
-
-        return x
-
-
-
-
-
-
-
-
+# --- UNet building blocks ---
 
 class DoubleConv(nn.Module):
+    """2 convolution layers with ReLU and BatchNorm."""
     def __init__(self, in_ch, out_ch):
-        #in_ch : nombre de canaux d’entrée / nbr of features ie dimension of the multispectral + temporal embedding
-        # out_ch : number of output channels 
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1), #kernel depth = nbr of feature = D = initiali : number of filters in the temporal CNN 
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
             nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True), # negativ values set to 0 for optimisation
-            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1), ## Receptiv field of 5*5 pixel <=> 50m*50m
-            nn.BatchNorm2d(out_ch), 
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
             nn.ReLU(inplace=True),
         )
+
     def forward(self, x):
-        return self.net(x)
+        return self.conv(x)
+
 
 class Down(nn.Module):
+    """Downscaling with maxpool followed by double conv."""
     def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.pool = nn.MaxPool2d(2)
-        self.conv = DoubleConv(in_ch, out_ch)
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(in_ch, out_ch)
+        )
+
     def forward(self, x):
-        x = self.pool(x)
-        x = self.conv(x)
-        return x
+        return self.maxpool_conv(x)
+
 
 class Up(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    """Upscaling followed by double conv."""
+    def __init__(self, in_ch, out_ch, bilinear=True):
         super().__init__()
-        self.up = nn.ConvTranspose2d(in_ch , in_ch // 2, kernel_size=2, stride=2)
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.up = nn.ConvTranspose2d(in_ch // 2, in_ch // 2, kernel_size=2, stride=2)
         self.conv = DoubleConv(in_ch, out_ch)
+
     def forward(self, x1, x2):
         x1 = self.up(x1)
-        # Ajuster taille si besoin
         diffY = x2.size()[2] - x1.size()[2]
         diffX = x2.size()[3] - x1.size()[3]
-        x1 = F.pad(x1, [diffX // 2, diffX - diffX//2,
-                        diffY // 2, diffY - diffY//2])
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
+                        diffY // 2, diffY - diffY // 2])
         x = torch.cat([x2, x1], dim=1)
-        x = self.conv(x)
-        return x
+        return self.conv(x)
+
 
 class UNet(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    """UNet architecture with configurable input and output channels."""
+    def __init__(self, in_ch=64, out_ch=10, bilinear=True):
         super().__init__()
         self.inc = DoubleConv(in_ch, 64)
         self.down1 = Down(64, 128)
         self.down2 = Down(128, 256)
-        self.up1 = Up(256, 128)
-        self.up2 = Up(128, 64)
+        self.down3 = Down(256, 512)
+        self.down4 = Down(512, 512)
+        self.up1 = Up(1024, 256, bilinear)
+        self.up2 = Up(512, 128, bilinear)
+        self.up3 = Up(256, 64, bilinear)
+        self.up4 = Up(128, 64, bilinear)
         self.outc = nn.Conv2d(64, out_ch, kernel_size=1)
+
     def forward(self, x):
-        x1 = self.inc(x)      # [B,64,H,W]
-        x2 = self.down1(x1)   # [B,128,H/2,W/2]
-        x3 = self.down2(x2)   # [B,256,H/4,W/4]
-        x = self.up1(x3, x2)  # [B,128,H/2,W/2]
-        x = self.up2(x, x1)   # [B,64,H,W]
-        logits = self.outc(x) # [B,out_ch,H,W]
-        return logits
-    
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
+        x = self.up1(x5, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        return self.outc(x)
 
+# --- Temporal Pixel-wise CNN ---
 
+class TemporalPixelCNN(nn.Module):
+    """
+    Applies temporal convolutions to each pixel independently across time.
+    Input: [B, C, T, H, W]
+    Output: [B, F, H, W] (features per pixel)
+    """
+    def __init__(self, in_channels=4, out_channels=64, kernel_size=3,
+                 nb_layers=2, pooling_type='max', dropout=0.0):
+        super().__init__()
+        layers = []
+        for i in range(nb_layers):
+            input_dim = in_channels if i == 0 else out_channels
+            layers += [
+                nn.Conv1d(input_dim, out_channels, kernel_size, padding=kernel_size // 2),
+                nn.BatchNorm1d(out_channels),
+                nn.ReLU(inplace=False),  # safer with AMP
+            ]
+            if dropout > 0:
+                layers.append(nn.Dropout(dropout))
+        self.temporal_net = nn.Sequential(*layers)
+        self.pooling_type = pooling_type
+
+    def forward(self, x):
+        B, T, C, H, W = x.shape  # Batch size, Time steps, Channels/features, Height, Width
+
+        # Permute to shape [B, H, W, C, T] to bring channels before time dimension
+        x = x.permute(0, 3, 4, 2, 1)
+
+        # Reshape to [B*H*W, C, T] for temporal conv1d expecting input channels = C
+        x = x.reshape(-1, C, T)
+
+        # Apply the temporal convolutional network
+        x = self.temporal_net(x)  # Output shape: [B*H*W, F, T]
+
+        # Pool over the time dimension to get fixed-length features per spatial location
+        if self.pooling_type == 'max':
+            x = x.max(dim=2).values  # Max pooling over time
+        elif self.pooling_type == 'mean':
+            x = x.mean(dim=2)        # Average pooling over time
+        else:
+            raise ValueError(f"Invalid pooling type: {self.pooling_type}")
+
+        # Reshape back to [B, H, W, F] and permute to [B, F, H, W] for CNN processing
+        x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
+
+        return x
+
+# --- Full Model ---
 
 class CropTypeClassifier(nn.Module):
-    def __init__(self, num_classes, temporal_out_channels=64, kernel_size=3):
+    """
+    Complete model combining TemporalPixelCNN + UNet.
+    """
+    def __init__(self, num_classes, temporal_out_channels=64, kernel_size=3,
+                 nb_temporal_layers=2, pooling_type='max', dropout=0.3):
         super().__init__()
         self.temporal_cnn = TemporalPixelCNN(
             in_channels=4,
             out_channels=temporal_out_channels,
-            kernel_size=kernel_size
+            kernel_size=kernel_size,
+            nb_layers=nb_temporal_layers,
+            pooling_type=pooling_type,
+            dropout=dropout
         )
         self.unet = UNet(in_ch=temporal_out_channels, out_ch=num_classes)
 
     def forward(self, x):
-        x = self.temporal_cnn(x)   # [B, temporal_out_channels, 24, 24]
-        x = self.unet(x)           # [B, num_classes, 24, 24]
-
-        # x final shape : [B, 4, 12, 24, 24]
+        x = self.temporal_cnn(x)  # [B, F, H, W]
+        x = self.unet(x)          # [B, num_classes, H, W]
         return x
-    
-
-if __name__ == "__main__":
-    B, C, T, H, W = 2, 4, 12, 24, 24
-    num_classes = 25
-
-    model = CropTypeClassifier(num_classes=num_classes)
-    x = torch.randn(B, C, T, H, W)
-    output = model(x)
-    print(output.shape)  # doit afficher : torch.Size([2, 5, 24, 24])
-
-
-# | Hyperparamètre          | Valeur actuelle | Rôle / Impact                                                                                                                          |
-# | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-# | `in_channels`           | `4`             | Nombre de bandes spectrales                                                                                                            |
-# | `out_channels`          | `64`            | ⚠️ Dim. de l'embedding temporel + profondeur des filtres (↗️ = meilleure représentation, plus de calcul)                               |
-# | `kernel_size`           | `3`             | Taille du filtre temporel (ex: 3 mois glissants). Contrôle la capacité du modèle à capturer des motifs temporels                       |
-# | `nb_layers` (implicite) | `2` couches     | Le fait d'empiler 2 convolutions augmente le **receptive field temporel** (capacité à capter des phénomènes lents comme la croissance) |
-# | **Pooling**             | `max`           | Choix entre `mean`, `max`, ou attention. Ici, `max` = sensible aux événements courts (pic NDVI, floraison)                             |
-
-# | Hyperparamètre        | Valeur actuelle  | Rôle / Impact                                                                                        |
-# | --------------------- | ---------------- | ---------------------------------------------------------------------------------------------------- |
-# | `DoubleConv` channels | `[64, 128, 256]` | Nombre de canaux par niveau de la UNet. Contrôle la **profondeur du traitement spatial**             |
-# | `Kernel_size conv2d`  | `3`              | Taille du voisinage spatial considéré (3×3 pixels = 30m×30m)                                         |
-# | `Up/Down scaling`     | `/2`             | Factor d’échelle entre chaque niveau. Plus tu descends, plus tu captes du contexte large             |
-# | `UNet depth`          | 2 niveaux        | Profondeur totale de l’UNet, impacte la capacité à capter des **structures spatiales hiérarchiques** |
-# | `Dropout`             | ❌ (absent)       | Tu peux en ajouter pour régulariser si overfit                                                       |
-# | `activation`          | `ReLU`           | Fonction d’activation standard                                                                       |
-
-# | Hyperparamètre          | Valeur actuelle  | Description                                       |
-# | ----------------------- | ---------------- | ------------------------------------------------- |
-# | `temporal_out_channels` | `64`             | Correspond à l’`out_channels` du temporal CNN     |
-# | `num_classes`           | `25`             | ⚠️ À adapter à tes données                        |
-# | `loss ignore_index`     | recommandé `0`   | Pour ignorer la classe "non culture" dans la loss |
-# | `optimizer`             | ❌ non défini ici | SGD ? Adam ? learning rate ?                      |
-# | `learning rate`         | ❌ à définir      | Important à ajuster (ex: `1e-3`, `1e-4`)          |
-# | `weight decay`          | ❌ à ajouter      | Pour régularisation L2 si besoin                  |
