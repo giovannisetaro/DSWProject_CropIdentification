@@ -1,6 +1,6 @@
 import numpy as np
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 from src.eval import evaluate
@@ -73,13 +73,22 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(X_train_val)):
     # Train model
     clf.fit(X_tr, y_tr)
 
-    # Validate and compute accuracy
-    y_va_pred = clf.predict(X_va)
+     # classes et probabilities prediction
+    y_va_pred  = clf.predict(X_va)
+    y_va_proba = clf.predict_proba(X_va)
+
+    # compute log-loss mean and total_loss
+    ll = log_loss(y_va, y_va_proba, labels=list(range(num_classes)))
+    total_loss = ll * len(y_va)
+
+    # evaluate
     print(f"\n[Fold {fold+1}] Evaluation:")
-    _ , metrics = evaluate(
+    cm_fold, metrics = evaluate(
         y_true=y_va,
         y_pred=y_va_pred,
         num_classes=num_classes,
+        total_loss=total_loss,
+        data_length=len(y_va),
         plot_cm=False
     )
     fold_accuracies.append(metrics["accuracy"])
@@ -101,12 +110,19 @@ final_clf = XGBClassifier(
 )
 final_clf.fit(X_train_val, y_train_val)
 
-# Test final model on test set
-y_test_pred = final_clf.predict(X_test)
+y_test_pred  = final_clf.predict(X_test)
+y_test_proba = final_clf.predict_proba(X_test)
+
+# log‐loss on test
+ll_test    = log_loss(y_test, y_test_proba, labels=list(range(num_classes)))
+total_loss = ll_test * len(y_test)
+
 print("\n[Final Test Evaluation]")
-_, metrics_test = evaluate(
+cm_test, metrics_test = evaluate(
     y_true=y_test,
     y_pred=y_test_pred,
     num_classes=num_classes,
+    total_loss=total_loss,
+    data_length=len(y_test),
     plot_cm=True
 )
