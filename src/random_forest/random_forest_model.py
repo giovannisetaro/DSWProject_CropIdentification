@@ -5,15 +5,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold, GridSearchCV
 from src.eval import evaluate
 import xgboost as xgb
+import joblib
 
 # Load datasets
 train_data = np.load("data/train_pixelwise.npz")
 val_data = np.load("data/val_pixelwise.npz")
-test_data = np.load("data/test_pixelwise.npz")
 
 X_train, y_train = train_data["X"], train_data["y"].astype(int)
 X_val, y_val = val_data["X"], val_data["y"].astype(int)
-X_test, y_test = test_data["X"], test_data["y"].astype(int)
 
 # Combine train and val for cross-validation
 X_train_val = np.concatenate([X_train, X_val], axis=0)
@@ -32,15 +31,18 @@ def map_labels(y, mapping):
     return y_mapped
 
 y_train_val = map_labels(y_train_val, class_map)
-y_test = map_labels(y_test, class_map)
 
 num_classes = len(all_classes)
 print(f"Number of classes: {num_classes}")
 
 # Normalize features
 scaler = StandardScaler()
+
 X_train_val = scaler.fit_transform(X_train_val)
-X_test = scaler.transform(X_test)
+
+# Save the scaler
+joblib.dump(scaler, "models/scaler.joblib")
+print("sclaer saved to models/scaler.joblib")
 
 # Hyperparameter grid
 param_grid = {
@@ -79,24 +81,5 @@ print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
 # Evaluate on test set
 best_model = grid_search.best_estimator_
 
-import joblib
-
 # Save the best model
 joblib.dump(best_model, "models/xgb_best_model.joblib")
-
-# Save the scaler
-joblib.dump(scaler, "models/scaler.joblib")
-
-y_test_pred = best_model.predict(X_test)
-
-class_names = [str(i) for i in range(num_classes)]
-
-print("\n[Final Test Evaluation]")
-cm_test, metrics_test = evaluate(
-    y_true=y_test,
-    y_pred=y_test_pred,
-    num_classes=num_classes,
-    total_loss=total_loss,
-    data_length=len(y_test),
-    plot_cm=True
-)

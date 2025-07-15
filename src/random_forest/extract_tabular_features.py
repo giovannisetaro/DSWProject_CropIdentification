@@ -58,7 +58,7 @@ def main():
     X_val = X_valtrain[val_indices]
     Y_val = Y_valtrain[val_indices]
 
-    # ⚡️ Ora molto più veloce
+
     X_train_flat, y_train_flat = flatten_samples(X_train, Y_train)
     X_val_flat, y_val_flat = flatten_samples(X_val, Y_val)
     X_test_flat, y_test_flat = flatten_samples(X_test, Y_test)

@@ -85,7 +85,7 @@ def main():
     patience = 3
     min_delta = 1e-4
 
-    # Variabili per il best model assoluto
+
     best_overall_val_loss = float('inf')
     best_overall_model_path = None
     best_overall_hparams = None
@@ -145,7 +145,7 @@ def main():
                     best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
                     torch.save(model.state_dict(), best_model_path)
 
-                    # Controlla se è il best model assoluto e salvalo in models/
+
                     if val_loss < best_overall_val_loss:
                         best_overall_val_loss = val_loss
                         best_overall_model_path = "models/best_model_cnn.pth"
