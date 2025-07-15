@@ -1,6 +1,6 @@
 import numpy as np
 from xgboost import XGBClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, log_loss
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold, GridSearchCV
 from src.eval import evaluate
@@ -92,10 +92,11 @@ y_test_pred = best_model.predict(X_test)
 class_names = [str(i) for i in range(num_classes)]
 
 print("\n[Final Test Evaluation]")
-_, metrics_test = evaluate(
+cm_test, metrics_test = evaluate(
     y_true=y_test,
     y_pred=y_test_pred,
     num_classes=num_classes,
-    class_names=class_names,
+    total_loss=total_loss,
+    data_length=len(y_test),
     plot_cm=True
 )
