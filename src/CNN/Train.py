@@ -1,53 +1,34 @@
-import os
-import itertools
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.utils.data import DataLoader, Subset, ConcatDataset
-from sklearn.model_selection import KFold
-from tqdm import tqdm
-from torch.utils.data import RandomSampler
-
-from src.data import get_dataset_3splits, CropCnnDataset
 from src.CNN.CNN_Model import CropTypeClassifier
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import KFold
+import os
+from tqdm import tqdm
 from src.eval import evaluate
-
-IGNORE_INDEX = 255
-NUM_CLASSES = 51
-
-# HPO grid (no batch size)
-LEARNING_RATES = [1e-3, 5e-4]
-KERNEL_SIZES = [3, 5]
-BATCH_SIZE = 16  # fixed
-
-# Fixed training settings
-NUM_EPOCHS = 10
-NUM_WORKERS = 16
-PATIENCE = 3
-MIN_DELTA = 1e-4
+import itertools
+from torch.utils.data import ConcatDataset
+from src.data import IndexedDataset
+from torch.utils.data import Dataset, TensorDataset
 
 def train_loop(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0
-    total_samples = 0
 
     for x, y in tqdm(dataloader, desc="Training", leave=False):
         x, y = x.to(device), y.to(device)
-        print(" x.device:", x.device)
-        print(" model.device:", next(model.parameters()).device)
         optimizer.zero_grad()
         outputs = model(x)
         loss = criterion(outputs, y)
         loss.backward()
         optimizer.step()
+        total_loss += loss.item()
 
-        total_loss += loss.item() * x.size(0)
-        total_samples += x.size(0)
+    return total_loss / len(dataloader)
 
-    avg_loss = total_loss / total_samples if total_samples > 0 else 0
-    return avg_loss
 
-def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=NUM_CLASSES, class_names=None, plot_cm=False):
+def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=51, class_names=None, plot_cm=False):
     model.eval()
     y_true = []
     y_pred = []
@@ -85,55 +66,54 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=N
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
-    torch.backends.cudnn.benchmark = True
+    import h5py
 
-    # Load training/validation dataset
-    split_files = [
-        f"data/split_datasets/dataset_split_{i}.h5"
-        for i in range(8)
-    ]
-    datasets = [CropCnnDataset(fp) for fp in split_files]
-    train_val_dataset = ConcatDataset(datasets)
+    with h5py.File("data/dataset_val_train.h5", "r") as f:
+        X = torch.tensor(f["data"][:])
+        Y = torch.tensor(f["labels"][:]).long()
+        print(f"X shape: {X.shape}")
+        print(f"Y shape: {Y.shape}")
+    train_val_dataset = TensorDataset(X, Y)
 
-    # K-Fold
+
+
     kf = KFold(n_splits=3, shuffle=True, random_state=42)
 
-    # Grid search over learning rate and kernel size
-    for lr, kernel_size in itertools.product(LEARNING_RATES, KERNEL_SIZES):
-        print(f"\n HPO Trial: LR={lr}, Kernel={kernel_size}")
+    learning_rates = [1e-3, 1e-4]
+    kernel_sizes = [3, 5]  
+    batch_size = 64
+    num_epochs = 50  
+    patience = 3
+    min_delta = 1e-4
+
+    for lr, kernel_size in itertools.product(learning_rates, kernel_sizes):
+
+        print(f"\n[HPO] lr={lr}, kernel_size={kernel_size}")
 
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
-            print(f"\n Fold {fold + 1}")
+            print(f"\nFold {fold + 1} | lr={lr}, kernel_size={kernel_size}, patience={patience}")
 
-            train_subset = Subset(train_val_dataset, train_idx)
-            val_subset = Subset(train_val_dataset, val_idx)
+            train_dataset_fold = IndexedDataset(train_val_dataset, train_idx)
+            val_dataset_fold = IndexedDataset(train_val_dataset, val_idx)
+
 
             train_loader = DataLoader(
-                train_subset,
-                batch_size=BATCH_SIZE,
-                sampler=RandomSampler(train_subset, replacement=False, num_samples=int(0.3 * len(train_subset))),  # 30% of data
-                num_workers=NUM_WORKERS,
-                pin_memory=True,
-                drop_last=False,
-                persistent_workers=False
+                train_dataset_fold,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=8,
+                pin_memory=True
             )
             val_loader = DataLoader(
-                val_subset,
-                batch_size=BATCH_SIZE,
+                val_dataset_fold,
+                batch_size=batch_size,
                 shuffle=False,
-                num_workers=NUM_WORKERS,
-                pin_memory=True,
-                drop_last=False,
-                persistent_workers=False
+                num_workers=8,
+                pin_memory=True
             )
 
-            model = CropTypeClassifier(num_classes=NUM_CLASSES, kernel_size=kernel_size).to(device)
-
-            assert next(model.parameters()).is_cuda, (
-                " Model is NOT on CUDA! Check model.to(device)"
-            )
-
-            criterion = nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
+            model = CropTypeClassifier(num_classes=51, kernel_size=kernel_size).to(device)  
+            criterion = nn.CrossEntropyLoss(ignore_index=255)
             optimizer = Adam(model.parameters(), lr=lr)
 
             best_val_loss = float('inf')
@@ -141,32 +121,32 @@ def main():
             early_stop_counter = 0
             best_model_path = None
 
-            for epoch in range(1, NUM_EPOCHS + 1):
+            for epoch in range(1, num_epochs + 1):
                 train_loss = train_loop(model, train_loader, optimizer, criterion, device)
-                metrics = evaluate_model_on_loader(model, val_loader, device, criterion, num_classes=NUM_CLASSES)
+                metrics = evaluate_model_on_loader(model, val_loader, device, criterion, num_classes=51)
                 val_loss = metrics['loss']
-                val_acc = metrics.get('accuracy', 0)
+                val_acc = metrics['accuracy']
 
-                print(f"[HPO: lr={lr}, ks={kernel_size} | Fold {fold+1} | Epoch {epoch}/{NUM_EPOCHS}] "
+                print(f"[Fold {fold+1} | Epoch {epoch}/{num_epochs}] "
                       f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-                if val_loss + MIN_DELTA < best_val_loss:
+                if val_loss + min_delta < best_val_loss:
                     best_val_loss = val_loss
                     best_epoch = epoch
                     early_stop_counter = 0
-                    subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}_bs_{BATCH_SIZE}"
+                    subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
                     os.makedirs(subdir, exist_ok=True)
                     best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
                     torch.save(model.state_dict(), best_model_path)
                 else:
                     early_stop_counter += 1
-                    print(f"No improvement. Early stop counter: {early_stop_counter}/{PATIENCE}")
+                    print(f"No improvement. Early stop counter: {early_stop_counter}/{patience}")
 
-                if early_stop_counter >= PATIENCE:
-                    print(f" Early stopping at epoch {epoch}")
+                if early_stop_counter >= patience:
+                    print(f"Early stopping at epoch {epoch}")
                     break
 
-            print(f"\n Best model for Fold {fold+1}: Epoch {best_epoch}, Val Loss: {best_val_loss:.4f}")
+            print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
             if best_model_path:
                 print(f"Model saved at: {best_model_path}")
 

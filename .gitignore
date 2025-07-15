@@ -33,3 +33,6 @@ data/
 /outputs/
 *.ckpt
 *.pth
+
+#Checkpoint files for CNN
+/checkpoints/
