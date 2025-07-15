@@ -76,7 +76,6 @@ def main():
     train_val_dataset = TensorDataset(X, Y)
 
 
-
     kf = KFold(n_splits=3, shuffle=True, random_state=42)
 
     learning_rates = [1e-3, 1e-4]
@@ -85,6 +84,13 @@ def main():
     num_epochs = 50  
     patience = 3
     min_delta = 1e-4
+
+    # Variabili per il best model assoluto
+    best_overall_val_loss = float('inf')
+    best_overall_model_path = None
+    best_overall_hparams = None
+    best_overall_fold = None
+    best_overall_epoch = None
 
     for lr, kernel_size in itertools.product(learning_rates, kernel_sizes):
 
@@ -138,6 +144,16 @@ def main():
                     os.makedirs(subdir, exist_ok=True)
                     best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
                     torch.save(model.state_dict(), best_model_path)
+
+                    # Controlla se è il best model assoluto e salvalo in models/
+                    if val_loss < best_overall_val_loss:
+                        best_overall_val_loss = val_loss
+                        best_overall_model_path = "models/best_model_cnn.pth"
+                        best_overall_hparams = (lr, kernel_size)
+                        best_overall_fold = fold + 1
+                        best_overall_epoch = epoch
+                        os.makedirs("models", exist_ok=True)
+                        torch.save(model.state_dict(), best_overall_model_path)
                 else:
                     early_stop_counter += 1
                     print(f"No improvement. Early stop counter: {early_stop_counter}/{patience}")
@@ -149,6 +165,11 @@ def main():
             print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
             if best_model_path:
                 print(f"Model saved at: {best_model_path}")
+
+    print("\n=== Best overall model summary ===")
+    print(f"Best overall model saved at: {best_overall_model_path}")
+    print(f"Parameters: lr={best_overall_hparams[0]}, kernel_size={best_overall_hparams[1]}, fold={best_overall_fold}, epoch={best_overall_epoch}")
+    print(f"Validation loss: {best_overall_val_loss:.4f}")
 
 if __name__ == "__main__":
     main()

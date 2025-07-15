@@ -78,6 +78,15 @@ print(f"Best CV accuracy: {grid_search.best_score_:.4f}")
 
 # Evaluate on test set
 best_model = grid_search.best_estimator_
+
+import joblib
+
+# Save the best model
+joblib.dump(best_model, "models/xgb_best_model.joblib")
+
+# Save the scaler
+joblib.dump(scaler, "models/scaler.joblib")
+
 y_test_pred = best_model.predict(X_test)
 
 class_names = [str(i) for i in range(num_classes)]
