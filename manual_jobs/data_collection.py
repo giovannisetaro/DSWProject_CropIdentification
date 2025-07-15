@@ -138,19 +138,19 @@ def get_median_image(start, end, Geometry_data_collect):
     median = ee.Algorithms.If(size.gt(0), compute_median(), None)
 
     
-    n_images = median.size().getInfo()
-    median_list = median.toList(median.size())
+   # n_images = median.size().getInfo()
+   #median_list = median.toList(median.size())
 
-    total_n_img = 0
+   # total_n_img = 0
     print(f"median images for date {start} retrieved ! infos : ")
-    for i in range(n_images):
-        img = ee.Image(median_list.get(i))
-        props = img.toDictionary().getInfo()
-        num_agg = props['Number_of_aggreted_images']
-        total_n_img += num_agg
-        print(f"Image {i} composed by {num_agg} images " )
+    #for i in range(n_images):
+    #    img = ee.Image(median_list.get(i))
+    #    props = img.toDictionary().getInfo()
+    #    num_agg = props['Number_of_aggreted_images']
+    #    total_n_img += num_agg
+    #    print(f"Image {i} composed by {num_agg} images " )
 
-    print(total_n_img)
+    #print(total_n_img)
 
     return median
     
