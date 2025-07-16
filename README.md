@@ -81,33 +81,34 @@ And retrieve computed median satellites images of teh studied zones for each mon
 # Models 
 
 ## Deep Learning Model Overview : 
-Our model is designed to classify each pixel of a multispectral time series image into crop types. It combines temporal and spatial feature extraction using a hybrid CNN architecture.
 
-Input : X ∈ [B, C=4, T, H, W]
-A batch of multispectral sequences with 4 channels (e.g. Red, Green, Blue, NIR), T time steps, and spatial size H×W.
+Our model classifies each pixel of a multispectral time-series image into crop types by combining temporal and spatial feature extraction in a hybrid CNN architecture.
 
-Step 1: Temporal Encoding (Pixel-wise)
+Input:
+X ∈ ℝ^[B, C=4, T, H, W] — a batch of multispectral sequences with 4 channels (e.g., Red, Green, Blue, NIR), T time steps, and spatial dimensions H×W.
 
-Reshape to [B × H × W, C, T]
+#### Step 1: Temporal Encoding (Pixel-wise)
 
-Apply a 1D CNN over time (T) independently for each pixel.
-→ Captures temporal patterns per pixel across spectral bands.
-→ Outputs D-dimensional embeddings.
+Reshape input to [B × H × W, C, T].
+Apply a 1D CNN independently on each pixel’s temporal sequence.
+This captures temporal patterns per pixel across spectral bands and outputs D-dimensional embeddings.
 
-Step 2: Reshape to Spatial Grid
+#### Step 2: Reshape to Spatial Grid
 
-Reshape back to [B, D, H, W]
-→ Builds a pseudo-image from temporal embeddings.
+Reshape back to [B, D, H, W], forming a pseudo-image from the temporal embeddings.
 
-Step 3: Spatial Encoding (Image-wise)
+#### Step 3: Spatial Encoding (Image-wise)
 
-Pass through a 2D CNN backbone (here it's a simplify version of a U-Net).
-→ Captures spatial context and structure between neighboring pixels.
+Pass through a 2D CNN backbone (a simplified U-Net).
+This captures spatial context and relationships between neighboring pixels.
 
-Step 4: Classification
+#### Step 4: Classification
 
-Output is per-pixel class logits: shape [B, num_classes, H, W]
+The final output is per-pixel class logits with shape [B, num_classes, H, W].
 
+#### Results : 
+![Predictions](plots/CNN_preds_zone1.png)
+![Ground truth](plots/GT_zone1_zoomed.png)
 
 ## biblio 
 
