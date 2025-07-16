@@ -155,11 +155,11 @@ We use a flattened pixel-wise data. Each input vector represents the spectral ev
 
 | **Metric**      | **Score** |
 | --------------- | --------- |
-| Average Loss    | 0.3826    |
-| Global Accuracy | 0.9637    |
-| Macro Precision | 0.8783    |
-| Macro Recall    | 0.6644    |
-| Macro F1-score  | 0.7242    |
+| Average Loss    | 0.7358    |
+| Global Accuracy | 0.8045    |
+| Macro Precision | 0.3543    |
+| Macro Recall    | 0.2303    |
+| Macro F1-score  | 0.2524    |
 
 
 
