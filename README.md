@@ -78,6 +78,14 @@ We used ESA WorldCover (10 m resolution, global) to identify highly cultivated a
  We then extracted all parcels from the 2023 RPG that intersect with these zones, totaling 130,000 parcels with an average size of 1.5 HA. 
 And retrieve computed median satellites images of teh studied zones for each month via the google earth engine API. 
 
+Despite this effort to ensure geographical diversity, we still face a highly imbalanced class distribution across crop types — some crops are vastly overrepresented while others have very few examples.
+
+The figure below illustrates this imbalance (note the logarithmic scale on the y-axis). 
+
+![Class distribution](plots/Class_Distribution.png)
+
+This skew can significantly affect evaluation metrics: in particular, accuracy may be misleading, as the model can achieve high accuracy by favoring dominant classes. Therefore, we also report macro-averaged metrics (precision, recall, F1-score) that treat all classes equally, regardless of frequency.
+
 ### Train / Validation / Test Splitting Strategy
 
 For each of the eight agricultural regions described above, we selected one 10×10 km zone out of the five available to serve as the test dataset. So 20% of the dataset is held out for testing, and that each region is represented in the test set.
