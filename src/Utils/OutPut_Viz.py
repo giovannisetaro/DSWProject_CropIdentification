@@ -35,7 +35,7 @@ def create_spatial_mosaic_from_geo_coords(patches, geo_coords, patch_size, trans
     return mosaic
 
 
-def generate_temporal_gif_from_h5(h5_path, zone_name, band_index, patch_size, out_name, vmin=None, vmax=None):
+def generate_png_from_h5(h5_path, zone_name, band_index, patch_size, out_name, vmin=None, vmax=None):
     """
     Crée un GIF temporel pour une bande et une zone données à partir d’un fichier .h5.
     
@@ -59,10 +59,9 @@ def generate_temporal_gif_from_h5(h5_path, zone_name, band_index, patch_size, ou
 
     zone_data = data[zone_mask]         # (N, T, C, H, W)
     zone_coords = coords[zone_mask]     # (N, 2)
-    zone_dates = dates[zone_mask]       # (N,)
     time_steps = zone_data.shape[1]
 
-    print(f"Génération du GIF pour {zone_name} avec {time_steps} dates...")
+    print(f"Génération du png pour {zone_name} avec {time_steps} dates...")
     with rasterio.open('/Users/placiermoise/Documents/dsw_proj/remote sensing crop classification/data/Tif/zone1/labels_raster_masked.tif') as src:
         transform_example = src.transform
     # Créer les mosaïques temporelles pour la bande sélectionnée
@@ -78,16 +77,16 @@ def generate_temporal_gif_from_h5(h5_path, zone_name, band_index, patch_size, ou
         )
 
         plt.imshow(band_mosaic, cmap='viridis')
-        plt.title(f"{zone_name}_2023_{t}")
+        plt.title(f"{zone_name}_2023_{t+1}")
         plt.axis('off')
         # Enregistrement du plot
         plt.savefig(f"plots/png/{out_name}_{n}.png", bbox_inches='tight', pad_inches=0)
         plt.close()  # Ferme la figure proprement
         n+=1
 
-out_name = 'zone6_B4'
+out_name = 'paris_6/paris_B1'
 
-generate_temporal_gif_from_h5(
+generate_png_from_h5(
     h5_path='data/dataset.h5',
     zone_name='zone6',
     band_index=2,
