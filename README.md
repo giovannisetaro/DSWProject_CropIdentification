@@ -168,9 +168,13 @@ We use a flattened pixel-wise data. Each input vector represents the spectral ev
 
 ## biblio 
 
-Turkoglu, M. O., D'Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K., & Wegner, J. D. (2021).  
-*Crop mapping from image time series: deep learning with multi-scale label hierarchies*.  
-Remote Sensing of Environment, 264. Elsevier.  
+Mehmet Ozgur Turkoglu, Stefano D'Aronco, Gregor Perich, Frank Liebisch, Constantin Streit, Konrad Schindler, Jan Dirk Wegner,
+Crop mapping from image time series: Deep learning with multi-scale label hierarchies,
+Remote Sensing of Environment,
+Volume 264,2021,112603,ISSN 0034-4257,
+[DOI](https://doi.org/10.1016/j.rse.2021.112603)
+[GitHub](https://github.com/0zgur0/multi-stage-convSTAR-network)
+
 
 ## Authors
 
