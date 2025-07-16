@@ -78,9 +78,21 @@ We used ESA WorldCover (10 m resolution, global) to identify highly cultivated a
  We then extracted all parcels from the 2023 RPG that intersect with these zones, totaling 130,000 parcels with an average size of 1.5 HA. 
 And retrieve computed median satellites images of teh studied zones for each month via the google earth engine API. 
 
+### Train / Validation / Test Splitting Strategy
+
+For each of the eight agricultural regions described above, we selected one 10×10 km zone out of the five available to serve as the test dataset. So 20% of the dataset is held out for testing, and that each region is represented in the test set.
+
+This allows us to evaluate the model's ability to generalize to completely unseen geographic areas across diverse agro-climatic contexts.
+
+The remaining 32 zones were used for training and validation. To optimize model performance while managing computational cost, we adopted a 3-fold cross-validation (CV) approach on the training set.
+A higher number of folds (e.g., K > 3) was avoided due to the long training times associated with deep learning models on large spatial-temporal datasets.
+
+This spatially-aware split avoide any data leakage between training and test areas.
+
+
 # Models 
 
-## Deep Learning Model Overview : 
+## Deep Learning approach : 
 
 Our model classifies each pixel of a multispectral time-series image into crop types by combining temporal and spatial feature extraction in a hybrid CNN architecture.
 
@@ -107,8 +119,29 @@ This captures spatial context and relationships between neighboring pixels.
 The final output is per-pixel class logits with shape [B, num_classes, H, W].
 
 #### Results : 
+
+\text{Accuracy} = \frac{\sum_{i=1}^{C} \mathrm{CM}_{i,i}}{\sum_{i=1}^{C} \sum_{j=1}^{C} \mathrm{CM}_{i,j}}
+
+\text{Precision}_i = \frac{\mathrm{TP}_i}{\mathrm{TP}_i + \mathrm{FP}_i + \varepsilon}
+
+\text{F1}_i = \frac{2 \cdot \text{Precision}_i \cdot \text{Recall}_i}{\text{Precision}_i + \text{Recall}_i + \varepsilon}
+
+
+| Metric            | Value   |
+|-------------------|---------|
+| Average Loss      | 0.5222  |
+| Global Accuracy   | 0.8721  |
+| Macro Precision   | 0.4099  |
+| Macro Recall      | 0.3544  |
+| Macro F1-score    | 0.3516  |
+
 ![Predictions](plots/CNN_preds_zone1.png)
 ![Ground truth](plots/GT_zone1_zoomed.png)
+
+
+
+
+
 
 ## biblio 
 
