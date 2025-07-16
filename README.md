@@ -1,5 +1,7 @@
 
-# Crop mapping from multispectral image time series: deep learning
+# Crop Type Classification from Multispectral Time Series Using Deep Learning
+
+This project focuses on mapping crop types at the pixel level using multispectral satellite image time series. By leveraging both temporal and spatial information through a hybrid CNN architecture, we aim to accurately classify agricultural parcels across diverse French landscapes. The approach combines 1D convolutions for temporal encoding and a simplified U-Net for spatial segmentation.
 
 ## Dataset Description
 
@@ -166,6 +168,18 @@ We use a flattened pixel-wise data. Each input vector represents the spectral ev
 
 ## biblio 
 
-Turkoglu, M. O., D'Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K., & Wegner, J. D. (2021).  
-*Crop mapping from image time series: deep learning with multi-scale label hierarchies*.  
-Remote Sensing of Environment, 264. Elsevier.  
+Mehmet Ozgur Turkoglu, Stefano D'Aronco, Gregor Perich, Frank Liebisch, Constantin Streit, Konrad Schindler, Jan Dirk Wegner,
+Crop mapping from image time series: Deep learning with multi-scale label hierarchies,
+Remote Sensing of Environment,
+Volume 264,2021,112603,ISSN 0034-4257,
+[DOI](https://doi.org/10.1016/j.rse.2021.112603)
+[GitHub](https://github.com/0zgur0/multi-stage-convSTAR-network)
+
+
+## Authors
+
+Giovanni Setaro - [Github](https://github.com/giovannisetaro)
+
+Noé Coursimaux - [Github](https://github.com/NoeCoursi)
+
+Moïse Placier - [Github](https://github.com/MoisePlacier)
