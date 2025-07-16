@@ -156,8 +156,7 @@ Precision, Recall, and F1-score (Macro) = averages across all classes (i.e., unw
 
 In addition to the deep learning model, we implemented a classical machine learning pipeline using XGBoost to classify pixels individually based on their temporal and spectral profiles.
 
-We use a flattened pixel-wise data from the shape (B, T, C, H, W) into a 2D pixel-wise format (B·H·W, T·C).
-Each input vector represents the spectral evolution of a pixel over time.
+Specifically, we reshape the original data from its multi-dimensional tensor format of shape (B, T, C, H, W) into a 2D array with shape (B * H * W, T * C). Each row in this 2D array corresponds to the temporal evolution of spectral features for a single pixel, effectively flattening the spatial dimensions while preserving temporal and spectral information. This enables the XGBoost model to operate on individual pixel time-series as feature vectors..
 
 ### Training:
  is optimized using GridSearchCV over a parameter grid of n_estimators ([100, 200]) and learning_rate ([0.01, 0.1]). 
