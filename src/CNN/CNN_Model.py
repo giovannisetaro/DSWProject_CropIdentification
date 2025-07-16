@@ -5,7 +5,7 @@ import torch.nn.functional as F
 # --- UNet building blocks ---
 
 class DoubleConv(nn.Module):
-    """2 convolution layers with ReLU and BatchNorm."""
+    """Two convolutional layers each followed by BatchNorm and ReLU activation."""
     def __init__(self, in_ch, out_ch):
         super().__init__()
         self.conv = nn.Sequential(
@@ -22,7 +22,7 @@ class DoubleConv(nn.Module):
 
 
 class Down(nn.Module):
-    """Downscaling with maxpool followed by double conv."""
+    """Downscaling step in UNet: MaxPooling followed by DoubleConv."""
     def __init__(self, in_ch, out_ch):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
@@ -35,7 +35,7 @@ class Down(nn.Module):
 
 
 class Up(nn.Module):
-    """Upscaling followed by double conv."""
+    """Upscaling step in UNet: Upsample (or ConvTranspose2d) followed by DoubleConv."""
     def __init__(self, in_ch, out_ch, bilinear=True):
         super().__init__()
         if bilinear:
@@ -46,6 +46,7 @@ class Up(nn.Module):
 
     def forward(self, x1, x2):
         x1 = self.up(x1)
+        # Pad if necessary to match size of x2 before concatenation
         diffY = x2.size()[2] - x1.size()[2]
         diffX = x2.size()[3] - x1.size()[3]
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
@@ -55,7 +56,7 @@ class Up(nn.Module):
 
 
 class UNet(nn.Module):
-    """UNet architecture with configurable input and output channels."""
+    """Full UNet architecture with configurable input/output channels."""
     def __init__(self, in_ch=64, out_ch=10, bilinear=True):
         super().__init__()
         self.inc = DoubleConv(in_ch, 64)
@@ -85,9 +86,9 @@ class UNet(nn.Module):
 
 class TemporalPixelCNN(nn.Module):
     """
-    Applies temporal convolutions to each pixel independently across time.
-    Input: [B, C, T, H, W]
-    Output: [B, F, H, W] (features per pixel)
+    Applies temporal convolutions independently to each pixel's time-series.
+    Input shape: [Batch, Channels, Time, Height, Width] = [B, C, T, H, W]
+    Output shape: [B, Feature_dim, H, W] — features aggregated over time per pixel.
     """
     def __init__(self, in_channels=4, out_channels=64, kernel_size=3,
                  nb_layers=2, pooling_type='max', dropout=0.0):
@@ -98,7 +99,7 @@ class TemporalPixelCNN(nn.Module):
             layers += [
                 nn.Conv1d(input_dim, out_channels, kernel_size, padding=kernel_size // 2),
                 nn.BatchNorm1d(out_channels),
-                nn.ReLU(inplace=False),  # safer with AMP
+                nn.ReLU(inplace=False),  # Use non-inplace ReLU for AMP safety
             ]
             if dropout > 0:
                 layers.append(nn.Dropout(dropout))
@@ -106,35 +107,36 @@ class TemporalPixelCNN(nn.Module):
         self.pooling_type = pooling_type
 
     def forward(self, x):
-        B, T, C, H, W = x.shape  # Batch size, Time steps, Channels/features, Height, Width
+        B, T, C, H, W = x.shape  # Batch, Time, Channels, Height, Width
 
-        # Permute to shape [B, H, W, C, T] to bring channels before time dimension
-        x = x.permute(0, 3, 4, 2, 1)
+        # Rearrange so channels before time dimension per pixel for Conv1d
+        x = x.permute(0, 3, 4, 2, 1)  # [B, H, W, C, T]
 
-        # Reshape to [B*H*W, C, T] for temporal conv1d expecting input channels = C
+        # Flatten batch and spatial dims, so Conv1d input shape: [B*H*W, C, T]
         x = x.reshape(-1, C, T)
 
-        # Apply the temporal convolutional network
-        x = self.temporal_net(x)  # Output shape: [B*H*W, F, T]
+        # Apply temporal 1D conv layers
+        x = self.temporal_net(x)  # output shape [B*H*W, out_channels, T]
 
-        # Pool over the time dimension to get fixed-length features per spatial location
+        # Pool across time to reduce dimension
         if self.pooling_type == 'max':
-            x = x.max(dim=2).values  # Max pooling over time
+            x = x.max(dim=2).values
         elif self.pooling_type == 'mean':
-            x = x.mean(dim=2)        # Average pooling over time
+            x = x.mean(dim=2)
         else:
             raise ValueError(f"Invalid pooling type: {self.pooling_type}")
 
-        # Reshape back to [B, H, W, F] and permute to [B, F, H, W] for CNN processing
+        # Reshape back to [B, H, W, out_channels], then permute to [B, out_channels, H, W]
         x = x.reshape(B, H, W, -1).permute(0, 3, 1, 2).contiguous()
 
         return x
 
-# --- Full Model ---
+# --- Full Model combining TemporalPixelCNN and UNet ---
 
 class CropTypeClassifier(nn.Module):
     """
-    Complete model combining TemporalPixelCNN + UNet.
+    Complete model combining temporal pixel-wise CNN with a UNet for spatial feature extraction.
+    Input: [B, C, T, H, W], Output: [B, num_classes, H, W]
     """
     def __init__(self, num_classes, temporal_out_channels=64, kernel_size=3,
                  nb_temporal_layers=2, pooling_type='max', dropout=0.3):
@@ -150,6 +152,6 @@ class CropTypeClassifier(nn.Module):
         self.unet = UNet(in_ch=temporal_out_channels, out_ch=num_classes)
 
     def forward(self, x):
-        x = self.temporal_cnn(x)  # [B, F, H, W]
+        x = self.temporal_cnn(x)  # [B, temporal_out_channels, H, W]
         x = self.unet(x)          # [B, num_classes, H, W]
         return x

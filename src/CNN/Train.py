@@ -12,10 +12,12 @@ from torch.utils.data import ConcatDataset
 from src.data import IndexedDataset
 from torch.utils.data import Dataset, TensorDataset
 
+# Training loop over one epoch
 def train_loop(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0
 
+    # Iterate batches with progress bar
     for x, y in tqdm(dataloader, desc="Training", leave=False):
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
@@ -25,9 +27,10 @@ def train_loop(model, dataloader, optimizer, criterion, device):
         optimizer.step()
         total_loss += loss.item()
 
+    # Return average loss over batches
     return total_loss / len(dataloader)
 
-
+# Evaluate model on given dataloader (e.g. validation or test)
 def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=51, class_names=None, plot_cm=False):
     model.eval()
     y_true = []
@@ -35,6 +38,7 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=5
     total_loss = 0.0
     total_samples = 0
 
+    # Disable gradient calculations during evaluation
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
@@ -51,6 +55,7 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=5
     y_true = torch.cat(y_true).numpy()
     y_pred = torch.cat(y_pred).numpy()
 
+    # Use custom evaluate function to calculate metrics and optionally plot confusion matrix
     _, metrics = evaluate(
         y_true=y_true,
         y_pred=y_pred,
@@ -64,10 +69,12 @@ def evaluate_model_on_loader(model, dataloader, device, criterion, num_classes=5
     return metrics
 
 def main():
+    # Setup device to GPU if available else CPU
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     import h5py
 
+    # Load dataset from HDF5 file into tensors
     with h5py.File("data/dataset_val_train.h5", "r") as f:
         X = torch.tensor(f["data"][:])
         Y = torch.tensor(f["labels"][:]).long()
@@ -75,30 +82,34 @@ def main():
         print(f"Y shape: {Y.shape}")
     train_val_dataset = TensorDataset(X, Y)
 
-
+    # Setup 3-fold cross validation with shuffling
     kf = KFold(n_splits=3, shuffle=True, random_state=42)
 
+    # Define hyperparameter grid
     learning_rates = [1e-3, 1e-4]
     kernel_sizes = [3, 5]  
     batch_size = 64
     num_epochs = 50  
-    patience = 3
-    min_delta = 1e-4
+    patience = 3  # Early stopping patience
+    min_delta = 1e-4  # Minimum improvement threshold for early stopping
 
-
+    # Variables to track the best overall model during HPO
     best_overall_val_loss = float('inf')
     best_overall_model_path = None
     best_overall_hparams = None
     best_overall_fold = None
     best_overall_epoch = None
 
+    # Iterate over all combinations of learning rate and kernel size
     for lr, kernel_size in itertools.product(learning_rates, kernel_sizes):
 
         print(f"\n[HPO] lr={lr}, kernel_size={kernel_size}")
 
+        # Cross-validation splits
         for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_dataset)):
             print(f"\nFold {fold + 1} | lr={lr}, kernel_size={kernel_size}, patience={patience}")
 
+            # Create train and validation subsets for this fold
             train_dataset_fold = IndexedDataset(train_val_dataset, train_idx)
             val_dataset_fold = IndexedDataset(train_val_dataset, val_idx)
 
@@ -117,6 +128,7 @@ def main():
                 pin_memory=True
             )
 
+            # Initialize model, loss, optimizer
             model = CropTypeClassifier(num_classes=51, kernel_size=kernel_size).to(device)
             criterion = nn.CrossEntropyLoss(ignore_index=255)
             optimizer = Adam(model.parameters(), lr=lr)
@@ -126,6 +138,7 @@ def main():
             early_stop_counter = 0
             best_model_state = None  # Store the best model state dict for this fold
 
+            # Training loop with early stopping
             for epoch in range(1, num_epochs + 1):
                 train_loss = train_loop(model, train_loader, optimizer, criterion, device)
                 metrics = evaluate_model_on_loader(model, val_loader, device, criterion, num_classes=51)
@@ -135,7 +148,7 @@ def main():
                 print(f"[Fold {fold+1} | Epoch {epoch}/{num_epochs}] "
                     f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
-                # Check if validation loss improved beyond min_delta
+                # Check for improvement beyond min_delta for early stopping
                 if val_loss + min_delta < best_val_loss:
                     best_val_loss = val_loss
                     best_epoch = epoch
@@ -159,7 +172,7 @@ def main():
                     print(f"Early stopping at epoch {epoch}")
                     break
 
-            # Save the best model for this fold only once after training completes
+            # Save the best model for this fold once training completes
             if best_model_state is not None:
                 subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
                 os.makedirs(subdir, exist_ok=True)
@@ -169,7 +182,7 @@ def main():
 
             print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
 
-
+    # Print summary of best overall model from hyperparameter search
     print("\n=== Best overall model summary ===")
     print(f"Best overall model saved at: {best_overall_model_path}")
     print(f"Parameters: lr={best_overall_hparams[0]}, kernel_size={best_overall_hparams[1]}, fold={best_overall_fold}, epoch={best_overall_epoch}")
