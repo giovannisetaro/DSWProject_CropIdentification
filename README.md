@@ -171,3 +171,11 @@ We use a flattened pixel-wise data. Each input vector represents the spectral ev
 Turkoglu, M. O., D'Aronco, S., Perich, G., Liebisch, F., Streit, C., Schindler, K., & Wegner, J. D. (2021).  
 *Crop mapping from image time series: deep learning with multi-scale label hierarchies*.  
 Remote Sensing of Environment, 264. Elsevier.  
+
+## Authors
+
+Giovanni Setaro - [Github](https://github.com/giovannisetaro)
+
+Noé Coursimaux - [Github](https://github.com/NoeCoursi)
+
+Moïse Placier - [Github](https://github.com/MoisePlacier)
