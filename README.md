@@ -128,6 +128,11 @@ This captures spatial context and relationships between neighboring pixels.
 
 The final output is per-pixel class logits with shape [B, num_classes, H, W].
 
+### Training:
+ is trained using 3-fold cross-validation, performing hyperparameter optimization over different learning rates ([1e-3, 1e-4]) 
+ and kernel sizes ([3, 5]). For each combination, validation loss is monitored, and early stopping is applied to prevent overfitting. 
+ The model achieving the lowest validation loss is saved along with its hyperparameters.
+
 #### Results : 
 
 Global Accuracy = The ratio of correctly classified pixels over the total number of pixels
@@ -152,6 +157,14 @@ Precision, Recall, and F1-score (Macro) = averages across all classes (i.e., unw
 In addition to the deep learning model, we implemented a classical machine learning pipeline using XGBoost to classify pixels individually based on their temporal and spectral profiles.
 
 We use a flattened pixel-wise data. Each input vector represents the spectral evolution of a pixel over time.
+
+### Training:
+ is optimized using GridSearchCV over a parameter grid of n_estimators ([100, 200]) and learning_rate ([0.01, 0.1]). 
+ A 3-fold cross-validation is employed to evaluate each combination, using accuracy as the scoring metric.
+ Due to the high computational demand, which requires a very powerful GPU for training,
+ the search is restricted to a small set of hyperparameter values. The best-performing model is saved for later use
+ (this also applies to CNN).
+
 
 #### Results :
 
