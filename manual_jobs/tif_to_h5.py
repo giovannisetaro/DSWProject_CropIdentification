@@ -227,6 +227,7 @@ def build_all_zones_dataset(data_dir, output_path, patch_size=(24, 24), stride=2
         hf.create_dataset("zones", data=np.array(all_zone, dtype = h5py.string_dtype(encoding='utf-8')))
 
     print(f"✅ Saved flat dataset with {all_data.shape[0]} patches to {output_path}")
+    
 #dataset.h5
 #└── 
 #    ├── data     [N, T, C, H, W]
