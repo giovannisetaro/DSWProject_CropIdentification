@@ -1,5 +1,7 @@
 
-# Crop mapping from multispectral image time series: deep learning
+# Crop Type Classification from Multispectral Time Series Using Deep Learning
+
+This project focuses on mapping crop types at the pixel level using multispectral satellite image time series. By leveraging both temporal and spatial information through a hybrid CNN architecture, we aim to accurately classify agricultural parcels across diverse French landscapes. The approach combines 1D convolutions for temporal encoding and a simplified U-Net for spatial segmentation.
 
 ## Dataset Description
 
