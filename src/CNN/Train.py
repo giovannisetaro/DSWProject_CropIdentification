@@ -102,7 +102,6 @@ def main():
             train_dataset_fold = IndexedDataset(train_val_dataset, train_idx)
             val_dataset_fold = IndexedDataset(train_val_dataset, val_idx)
 
-
             train_loader = DataLoader(
                 train_dataset_fold,
                 batch_size=batch_size,
@@ -118,14 +117,14 @@ def main():
                 pin_memory=True
             )
 
-            model = CropTypeClassifier(num_classes=51, kernel_size=kernel_size).to(device)  
+            model = CropTypeClassifier(num_classes=51, kernel_size=kernel_size).to(device)
             criterion = nn.CrossEntropyLoss(ignore_index=255)
             optimizer = Adam(model.parameters(), lr=lr)
 
             best_val_loss = float('inf')
             best_epoch = 0
             early_stop_counter = 0
-            best_model_path = None
+            best_model_state = None  # Store the best model state dict for this fold
 
             for epoch in range(1, num_epochs + 1):
                 train_loss = train_loop(model, train_loader, optimizer, criterion, device)
@@ -134,18 +133,16 @@ def main():
                 val_acc = metrics['accuracy']
 
                 print(f"[Fold {fold+1} | Epoch {epoch}/{num_epochs}] "
-                      f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
+                    f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}")
 
+                # Check if validation loss improved beyond min_delta
                 if val_loss + min_delta < best_val_loss:
                     best_val_loss = val_loss
                     best_epoch = epoch
+                    best_model_state = model.state_dict()  # Save model state in memory
                     early_stop_counter = 0
-                    subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
-                    os.makedirs(subdir, exist_ok=True)
-                    best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
-                    torch.save(model.state_dict(), best_model_path)
 
-
+                    # Update global best model if current validation loss is lower
                     if val_loss < best_overall_val_loss:
                         best_overall_val_loss = val_loss
                         best_overall_model_path = "models/best_model_cnn.pth"
@@ -153,7 +150,7 @@ def main():
                         best_overall_fold = fold + 1
                         best_overall_epoch = epoch
                         os.makedirs("models", exist_ok=True)
-                        torch.save(model.state_dict(), best_overall_model_path)
+                        torch.save(model.state_dict(), best_overall_model_path)  # Save global best model immediately
                 else:
                     early_stop_counter += 1
                     print(f"No improvement. Early stop counter: {early_stop_counter}/{patience}")
@@ -162,9 +159,16 @@ def main():
                     print(f"Early stopping at epoch {epoch}")
                     break
 
+            # Save the best model for this fold only once after training completes
+            if best_model_state is not None:
+                subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
+                os.makedirs(subdir, exist_ok=True)
+                best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
+                torch.save(best_model_state, best_model_path)
+                print(f"Saved best fold model to {best_model_path} at epoch {best_epoch}")
+
             print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
-            if best_model_path:
-                print(f"Model saved at: {best_model_path}")
+
 
     print("\n=== Best overall model summary ===")
     print(f"Best overall model saved at: {best_overall_model_path}")
