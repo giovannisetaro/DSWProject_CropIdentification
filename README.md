@@ -120,14 +120,12 @@ The final output is per-pixel class logits with shape [B, num_classes, H, W].
 
 #### Results : 
 
-\text{Accuracy} = \frac{\sum_{i=1}^{C} \mathrm{CM}_{i,i}}{\sum_{i=1}^{C} \sum_{j=1}^{C} \mathrm{CM}_{i,j}}
+Global Accuracy = The ratio of correctly classified pixels over the total number of pixels
 
-\text{Precision}_i = \frac{\mathrm{TP}_i}{\mathrm{TP}_i + \mathrm{FP}_i + \varepsilon}
-
-\text{F1}_i = \frac{2 \cdot \text{Precision}_i \cdot \text{Recall}_i}{\text{Precision}_i + \text{Recall}_i + \varepsilon}
+Precision, Recall, and F1-score (Macro) = averages across all classes (i.e., unweighted mean over classes):
 
 
-| Metric            | Value   |
+| **Metric**        |**Score**|
 |-------------------|---------|
 | Average Loss      | 0.5222  |
 | Global Accuracy   | 0.8721  |
@@ -139,6 +137,21 @@ The final output is per-pixel class logits with shape [B, num_classes, H, W].
 ![Ground truth](plots/GT_zone1_zoomed.png)
 
 
+## XGBoost approach (Pixel-wise Classification)
+
+In addition to the deep learning model, we implemented a classical machine learning pipeline using XGBoost to classify pixels individually based on their temporal and spectral profiles.
+
+We use a flattened pixel-wise data. Each input vector represents the spectral evolution of a pixel over time.
+
+#### Results :
+
+| **Metric**      | **Score** |
+| --------------- | --------- |
+| Average Loss    | 0.3826    |
+| Global Accuracy | 0.9637    |
+| Macro Precision | 0.8783    |
+| Macro Recall    | 0.6644    |
+| Macro F1-score  | 0.7242    |
 
 
 
