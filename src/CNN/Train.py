@@ -177,7 +177,13 @@ def main():
                 subdir = f"checkpoints/lr_{lr}_ks_{kernel_size}"
                 os.makedirs(subdir, exist_ok=True)
                 best_model_path = os.path.join(subdir, f"fold_{fold+1}.pth")
-                torch.save(best_model_state, best_model_path)
+                checkpoint = {
+                    'model_state_dict': best_model_state,
+                    'kernel_size': kernel_size,
+                    'lr': lr,
+                    'num_classes': 51
+                }
+                torch.save(checkpoint, best_model_path)
                 print(f"Saved best fold model to {best_model_path} at epoch {best_epoch}")
 
             print(f"\nBest model for Fold {fold+1}: epoch {best_epoch}, val loss: {best_val_loss:.4f}")
